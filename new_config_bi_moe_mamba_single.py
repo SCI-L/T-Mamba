@@ -87,15 +87,15 @@ CONFIG = {
     # -------------------------
     "loss_cfg": {
         # loss_type=path
-        "path_nll": 1.0,                # ?? NLL
-        "path_gate_ce": 0.05,           # gate CE ??
-        "path_max_switches": 3,         # Viterbi ??????
-        "path_switch_cost": 0.5,        # Viterbi ????
-        "path_gate_warmup_epochs": 15,  # gate ????
-        "path_load_balance": 0.2,       # path ??????
-        "path_entropy": 0.02,           # path ?????
-        "path_entropy_decay_epochs": 0, # path ?????(0=???)
-        "path_smooth_lam": 0.0,         # path ?????(??????)
+        "path_nll": 1.0,                # 路径 NLL
+        "path_gate_ce": 0.05,           # gate CE 权重
+        "path_max_switches": 3,         # Viterbi 最大切换次数
+        "path_switch_cost": 0.5,        # Viterbi 切换惩罚
+        "path_gate_warmup_epochs": 15,  # gate 预热轮数
+        "path_load_balance": 0.2,       # path 专用负载均衡
+        "path_entropy": 0.02,           # path 专用熵正则
+        "path_entropy_decay_epochs": 0, # path 熵衰减轮数(0=不衰减)
+        "path_smooth_lam": 0.0,         # path 平滑项权重(速度变化惩罚)
 
         # loss_type=mixture
         "nll": 1.0,                     # Mixture NLL
@@ -116,3 +116,4 @@ CONFIG = {
         "min_sigma_m": 2.0,         # sigma 下限(米)
     },
 }
+
