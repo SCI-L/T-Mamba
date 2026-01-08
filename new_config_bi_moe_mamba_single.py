@@ -41,7 +41,7 @@ CONFIG = {
     "time_split_buffer_steps": 60,  # cutoff 缓冲步数
 
     # [4.2] Loss type
-    "loss_type": "path",  # loss 类型: path / mixture / softbestk
+    "loss_type": "mixture",  # loss 类型: mixture
 
     # -------------------------
     # [5] Model
@@ -87,16 +87,11 @@ CONFIG = {
     # [8] Loss config
     # -------------------------
     "loss_cfg": {
-        # loss_type=path
-        "path_nll": 1.0,                # 路径 NLL
-        "path_gate_ce": 0.1,           # gate CE 权重
-        "path_max_switches": 3,         # Viterbi 最大切换次数
-        "path_switch_cost": 0.5,        # Viterbi 切换惩罚
-        "path_gate_warmup_epochs": 15,  # gate 预热轮数
-        "path_load_balance": 0.2,       # path 专用负载均衡
-        "path_entropy": 0.02,           # path 专用熵正则
-        "path_entropy_decay_epochs": 0, # path 熵衰减轮数(0=不衰减)
-        "path_smooth_lam": 0.003,         # path 平滑项权重(速度变化惩罚)
+        # loss_type=mixture
+        "mixture_nll_weight": 1.0,   # soft mixture NLL 权重
+        "load_balance": 0.2,         # gate 负载均衡
+        "entropy": 0.02,             # gate 熵正则
+        "entropy_decay_epochs": 0,   # 熵衰减轮数(0=不衰减)
 
         # shared
         "min_sigma_m": 2.0,         # sigma 下限(米)

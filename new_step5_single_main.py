@@ -18,8 +18,8 @@ from new_step1_process_single import Step1Config, run_step1_process
 from new_step2_single_prepare import get_dataloaders
 from new_step3_single_model import ModelConfig, BiMoEMambaTrajectory
 
-# Step4 includes: Trainer + SingleTrajectoryPathLoss
-from new_step4_single_trainer import Trainer, SingleTrajectoryPathLoss
+# Step4 includes: Trainer + SoftMixtureNLLLoss
+from new_step4_single_trainer import Trainer, SoftMixtureNLLLoss
 from moe_decode import viterbi_decode_limited_switch, beam_decode_limited_switch
 
 logger = logging.getLogger("Main")
@@ -105,21 +105,16 @@ class GlobalConfig:
 
     loss_cfg: Dict[str, Any] = None
     # loss_type:
-    # - "path": single-trajectory Viterbi alignment
-    loss_type: str = "path"
+    # - "mixture": soft mixture NLL
+    loss_type: str = "mixture"
 
 
 def default_loss_cfg():
     return {
-        "path_nll": 1.0,
-        "path_gate_ce": 0.1,
-        "path_max_switches": 2,
-        "path_switch_cost": 1.0,
-        "path_gate_warmup_epochs": 3,
-        "path_load_balance": 0.01,
-        "path_entropy": 0.001,
-        "path_entropy_decay_epochs": 0,
-        "path_smooth_lam": 0.0,
+        "mixture_nll_weight": 1.0,
+        "load_balance": 0.01,
+        "entropy": 0.001,
+        "entropy_decay_epochs": 0,
         "min_sigma_m": 0.8,
     }
 
@@ -528,7 +523,7 @@ class TrainingHistory:
             self._append("train_aux", float(train_out["aux"]))
         if "skipped_batches" in train_out:
             self._append("train_skipped_batches", float(train_out["skipped_batches"]))
-        for k in ["path_nll", "gate_ce", "entropy", "lb", "smooth"]:
+        for k in ["mixture_nll", "entropy", "lb"]:
             if k in train_out:
                 self._append(f"train_{k}", float(train_out[k]))
 
@@ -539,7 +534,7 @@ class TrainingHistory:
             self._append("val_main", float(val_out["val_main"]))
         if "val_aux" in val_out:
             self._append("val_aux", float(val_out["val_aux"]))
-        for k in ["path_nll", "gate_ce", "entropy", "lb", "smooth", "switch_ade", "switch_cnt"]:
+        for k in ["mixture_nll", "entropy", "lb", "switch_ade", "switch_cnt"]:
             if k in val_out:
                 self._append(f"val_{k}", float(val_out[k]))
 
@@ -587,9 +582,7 @@ class TrainingHistory:
 
         panels = [
             ("Loss", ("train_loss", "val_loss")),
-            ("path_nll", ("train_path_nll", "val_path_nll")),
-            ("gate_ce", ("train_gate_ce", "val_gate_ce")),
-            ("smooth", ("train_smooth", "val_smooth")),
+            ("mixture_nll", ("train_mixture_nll", "val_mixture_nll")),
             ("entropy", ("train_entropy", "val_entropy")),
             ("lb", ("train_lb", "val_lb")),
         ]
@@ -690,12 +683,12 @@ def main(config_path: str = None):
     model = BiMoEMambaTrajectory(mcfg).to(device)
 
     # Step4 loss/optim
-    loss_type = str(getattr(cfg, "loss_type", "path")).lower()
-    if loss_type in ["path", "expert_path", "viterbi", "single_path", "single-trajectory"]:
-        criterion = SingleTrajectoryPathLoss(cfg.loss_cfg)
-        logger.info("[Step4] Loss: SingleTrajectoryPathLoss (Viterbi path-aligned single trajectory)")
+    loss_type = str(getattr(cfg, "loss_type", "mixture")).lower()
+    if loss_type in ["mixture", "soft", "soft_mixture", "soft-mixture"]:
+        criterion = SoftMixtureNLLLoss(cfg.loss_cfg)
+        logger.info("[Step4] Loss: SoftMixtureNLLLoss (per-step soft mixture NLL)")
     else:
-        raise ValueError("Only loss_type='path' is supported in Step5.")
+        raise ValueError("Only loss_type='mixture' is supported in Step5.")
     optimizer = optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
 
     # 修复: 不使用 verbose(你环境的 torch 不支持)
