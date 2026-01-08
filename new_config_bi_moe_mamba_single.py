@@ -6,8 +6,8 @@ CONFIG = {
     # [1] Data paths
     # -------------------------
     "data_path": r"D:\\American AIS Data\AIS_2025\\ais_2025_resampled_30s.csv",   # AIS 原始数据文件路径
-    "save_dir": "./exp_data_single/mamba_bi_moe_V13",                       # Step1 预处理输出目录
-    "res_dir": "./exp_results_single/mamba_bi_moe_V13",                     # 训练/评估输出目录
+    "save_dir": "./exp_data_single/mamba_bi_moe_V15",                       # Step1 预处理输出目录
+    "res_dir": "./exp_results_single/mamba_bi_moe_V15",                     # 训练/评估输出目录
 
     # -------------------------
     # [2] Windowing (steps)
@@ -65,6 +65,7 @@ CONFIG = {
     # [6.1] Viterbi decode
     "viterbi_max_switches": 3,      # 最大切换次数
     "viterbi_switch_cost": 0.5,     # 切换惩罚
+    "viterbi_beam_size": 3,         # Beam Search 保留路径数(>1 启用)
 
     # [9] Step6 visualization
     "heatmap_grid": 260,  # 热力图网格分辨率
@@ -88,32 +89,16 @@ CONFIG = {
     "loss_cfg": {
         # loss_type=path
         "path_nll": 1.0,                # 路径 NLL
-        "path_gate_ce": 0.05,           # gate CE 权重
+        "path_gate_ce": 0.1,           # gate CE 权重
         "path_max_switches": 3,         # Viterbi 最大切换次数
         "path_switch_cost": 0.5,        # Viterbi 切换惩罚
         "path_gate_warmup_epochs": 15,  # gate 预热轮数
         "path_load_balance": 0.2,       # path 专用负载均衡
         "path_entropy": 0.02,           # path 专用熵正则
         "path_entropy_decay_epochs": 0, # path 熵衰减轮数(0=不衰减)
-        "path_smooth_lam": 0.0,         # path 平滑项权重(速度变化惩罚)
-
-        # loss_type=mixture
-        "nll": 1.0,                     # Mixture NLL
-        "soft_bestofk": 0.10,           # soft-best-of-K
-        "diversity": 0.01,              # 多样性惩罚
-        "entropy": 0.01,                # 熵正则
-        "entropy_decay_epochs": 5,      # 熵衰减轮数
-        "switch": 0.01,                 # gate 切换惩罚
-        "load_balance": 0.2,            # 负载均衡
-        "softmin_tau": 0.5,             # softmin 温度
-
-        # loss_type=softbestk
-        "best_nll": 1.0,            # softbestk 主项
-        "gate_ce": 0.0,             # softbestk gate CE
-        "tau_gate": 1.0,            # gate 温度
+        "path_smooth_lam": 0.003,         # path 平滑项权重(速度变化惩罚)
 
         # shared
         "min_sigma_m": 2.0,         # sigma 下限(米)
     },
 }
-
