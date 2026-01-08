@@ -18,14 +18,9 @@ from new_step1_process_single import Step1Config, run_step1_process
 from new_step2_single_prepare import get_dataloaders
 from new_step3_single_model import ModelConfig, BiMoEMambaTrajectory
 
-# Step4 里应当包含: Trainer + MixtureTrajectoryLoss
-from new_step4_single_trainer import (
-    Trainer,
-    MixtureTrajectoryLoss,
-    SoftBestKTrajectoryLoss,
-    SingleTrajectoryPathLoss,
-)
-from moe_decode import viterbi_decode_limited_switch
+# Step4 includes: Trainer + SingleTrajectoryPathLoss
+from new_step4_single_trainer import Trainer, SingleTrajectoryPathLoss
+from moe_decode import viterbi_decode_limited_switch, beam_decode_limited_switch
 
 logger = logging.getLogger("Main")
 
@@ -91,6 +86,7 @@ class GlobalConfig:
     viterbi_max_switches: int = 2
     # switch_cost：切换惩罚（越大越不愿切换）
     viterbi_switch_cost: float = 1.0
+    viterbi_beam_size: int = 1
     # （不再保存“多条候选轨迹”的文件；只输出单条解码轨迹 + 热力图）
 
     # Step6
@@ -109,41 +105,23 @@ class GlobalConfig:
 
     loss_cfg: Dict[str, Any] = None
     # loss_type:
-    # - "path":   单条轨迹训练(Viterbi 路径对齐: 专家只学自己那条 + gate 对齐, 最贴近部署的"分段切换专家")
-    # - "mixture": Mixture NLL(log-sum-exp 的加权分布训练, 更"软", 但与单条轨迹解码存在目标差异)
-    # - "softbestk": Soft-best-of-K(更偏"选一个最好的专家"训练方式, 部署时可配合 top-1/top-2)
+    # - "path": single-trajectory Viterbi alignment
     loss_type: str = "path"
 
 
 def default_loss_cfg():
-    # 推荐: per-step Mixture SOTA 配置(你可按需调)
     return {
-        # Mixture NLL
-        "nll": 1.0,
-        # Soft best-of-K(用 MSE 做辅助回归, 防止所有 mode 都学不好)
-        "soft_bestofk": 0.15,
-        # 多样性(mode 终点分散, 防塌缩)
-        "diversity": 0.02,
-        # entropy(建议小且衰减到 0: 前期防塌缩, 后期让 gate 变尖)
-        "entropy": 0.001,
-        "entropy_decay_epochs": 10,
-        # per-step gate: 抑制频繁切换 + load balance
-        "switch": 0.02,
-        "load_balance": 0.01,
+        "path_nll": 1.0,
+        "path_gate_ce": 0.1,
+        "path_max_switches": 2,
+        "path_switch_cost": 1.0,
+        "path_gate_warmup_epochs": 3,
         "path_load_balance": 0.01,
-        "path_smooth_lam": 0.0,
-
-        "softmin_tau": 0.5,
-        "min_sigma_m": 0.8,
-
-        # SoftBestK 兼容字段(如 loss_type=softbestk 会用到)
-        "best_nll": 1.0,
-        "gate_ce": 0.1,
-        "tau_gate": 1.0,
         "path_entropy": 0.001,
         "path_entropy_decay_epochs": 0,
+        "path_smooth_lam": 0.0,
+        "min_sigma_m": 0.8,
     }
-
 
 def _load_cfg_dict_from_py(py_path: str) -> Dict[str, Any]:
     spec = importlib.util.spec_from_file_location("user_config", py_path)
@@ -369,12 +347,21 @@ def run_full_evaluation(model, loader, device: str, cfg: GlobalConfig) -> Dict[s
 
         k_steps = np.zeros((B, P), dtype=np.int64)
         sw_cnt = np.zeros((B,), dtype=np.int64)
+        beam_size = int(getattr(cfg, "viterbi_beam_size", 1))
         for i in range(B):
-            res = viterbi_decode_limited_switch(
-                pi_step_np[i],
-                max_switches=int(getattr(cfg, "viterbi_max_switches", 2)),
-                switch_cost=float(getattr(cfg, "viterbi_switch_cost", 1.0)),
-            )
+            if beam_size > 1:
+                res = beam_decode_limited_switch(
+                    pi_step_np[i],
+                    max_switches=int(getattr(cfg, "viterbi_max_switches", 2)),
+                    switch_cost=float(getattr(cfg, "viterbi_switch_cost", 1.0)),
+                    beam_size=beam_size,
+                )
+            else:
+                res = viterbi_decode_limited_switch(
+                    pi_step_np[i],
+                    max_switches=int(getattr(cfg, "viterbi_max_switches", 2)),
+                    switch_cost=float(getattr(cfg, "viterbi_switch_cost", 1.0)),
+                )
             k_steps[i] = res.k_steps
             sw_cnt[i] = int(res.n_switches)
 
@@ -541,7 +528,7 @@ class TrainingHistory:
             self._append("train_aux", float(train_out["aux"]))
         if "skipped_batches" in train_out:
             self._append("train_skipped_batches", float(train_out["skipped_batches"]))
-        for k in ["path_nll", "gate_ce", "path_switch", "entropy", "lb", "mix_nll", "best_soft", "div"]:
+        for k in ["path_nll", "gate_ce", "entropy", "lb", "smooth"]:
             if k in train_out:
                 self._append(f"train_{k}", float(train_out[k]))
 
@@ -552,7 +539,7 @@ class TrainingHistory:
             self._append("val_main", float(val_out["val_main"]))
         if "val_aux" in val_out:
             self._append("val_aux", float(val_out["val_aux"]))
-        for k in ["path_nll", "gate_ce", "path_switch", "entropy", "lb", "mix_nll", "best_soft", "div", "switch_ade", "switch_cnt"]:
+        for k in ["path_nll", "gate_ce", "entropy", "lb", "smooth", "switch_ade", "switch_cnt"]:
             if k in val_out:
                 self._append(f"val_{k}", float(val_out[k]))
 
@@ -602,7 +589,7 @@ class TrainingHistory:
             ("Loss", ("train_loss", "val_loss")),
             ("path_nll", ("train_path_nll", "val_path_nll")),
             ("gate_ce", ("train_gate_ce", "val_gate_ce")),
-            ("path_switch", ("train_path_switch", "val_path_switch")),
+            ("smooth", ("train_smooth", "val_smooth")),
             ("entropy", ("train_entropy", "val_entropy")),
             ("lb", ("train_lb", "val_lb")),
         ]
@@ -704,19 +691,11 @@ def main(config_path: str = None):
 
     # Step4 loss/optim
     loss_type = str(getattr(cfg, "loss_type", "path")).lower()
-    if loss_type in ["mixture", "mix", "mdn"]:
-        criterion = MixtureTrajectoryLoss(cfg.loss_cfg)
-        logger.info("[Step4] Loss: MixtureTrajectoryLoss (mixture NLL)")
-    elif loss_type in ["softbestk", "bestk", "soft_bestk", "soft-bestk"]:
-        criterion = SoftBestKTrajectoryLoss(cfg.loss_cfg)
-        logger.info("[Step4] Loss: SoftBestKTrajectoryLoss (soft-best-of-K NLL + gate_ce)")
-    elif loss_type in ["path", "expert_path", "viterbi", "single_path", "single-trajectory"]:
+    if loss_type in ["path", "expert_path", "viterbi", "single_path", "single-trajectory"]:
         criterion = SingleTrajectoryPathLoss(cfg.loss_cfg)
         logger.info("[Step4] Loss: SingleTrajectoryPathLoss (Viterbi path-aligned single trajectory)")
     else:
-        raise ValueError(
-            f"Unknown loss_type: {loss_type}. Use 'path' (recommended) / 'mixture' / 'softbestk'."
-        )
+        raise ValueError("Only loss_type='path' is supported in Step5.")
     optimizer = optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
 
     # 修复: 不使用 verbose(你环境的 torch 不支持)
