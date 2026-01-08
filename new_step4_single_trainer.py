@@ -229,42 +229,23 @@ def _viterbi_scores_limited_switch_torch(
 
 
 # ==========================================================
-# 2) Path loss (single-trajectory Viterbi alignment)
+# 2) Soft Mixture NLL loss (per-step mixture likelihood)
 # ==========================================================
-class SingleTrajectoryPathLoss(nn.Module):
+class SoftMixtureNLLLoss(nn.Module):
     """
-    目标：训练 K 个专家，但最终只输出一条“分段切换”的轨迹。
-
-    思路（硬对齐 / 类 EM）：
-    1) 对每个样本，计算每步每专家的 posterior score：
-         score(t,k) = log_pi(t,k) - nll(t,k)
-    2) 用受限切换 Viterbi 选出最优专家序列 k_t（单条路径）
-    3) 只回传该路径上的 NLL（让专家学会），并用 CE 监督 gate（让 gate 学会输出该路径）
+    Soft Mixture NLL:
+      log_p(t) = logsumexp(log_pi(t,k) - nll(t,k))
+      nll(t) = -log_p(t)
     """
 
     def __init__(self, loss_cfg: Dict[str, Any]):
         super().__init__()
-        self.w_path = float(loss_cfg.get("path_nll", 1.0))
-        self.w_gate = float(loss_cfg.get("path_gate_ce", 0.1))
-        self.w_lb = float(loss_cfg.get("path_load_balance", loss_cfg.get("load_balance", 0.0)))
-        self.w_ent = float(loss_cfg.get("path_entropy", loss_cfg.get("entropy", 0.0)))
-        self.entropy_start = float(loss_cfg.get("path_entropy", loss_cfg.get("entropy", self.w_ent)))
-        self.entropy_decay_epochs = int(loss_cfg.get("path_entropy_decay_epochs", 0))
-        self.w_smooth = float(loss_cfg.get("path_smooth_lam", 0.0))
+        self.w_mix = float(loss_cfg.get("mixture_nll_weight", 1.0))
+        self.w_lb = float(loss_cfg.get("load_balance", 0.0))
+        self.w_ent = float(loss_cfg.get("entropy", 0.0))
+        self.entropy_start = float(loss_cfg.get("entropy", self.w_ent))
+        self.entropy_decay_epochs = int(loss_cfg.get("entropy_decay_epochs", 0))
         self.min_sigma_m = float(loss_cfg.get("min_sigma_m", 0.8))
-        self.max_switches = int(loss_cfg.get("path_max_switches", 2))
-        self.switch_cost = float(loss_cfg.get("path_switch_cost", 1.0))
-
-        # gate_ce 预热：前 N 轮从 0 线性升到目标值，避免早期 gate 乱导致对齐不稳
-        self.gate_warmup_epochs = int(loss_cfg.get("path_gate_warmup_epochs", 3))
-        self._gate_scale = 1.0
-
-    def maybe_update_epoch(self, epoch: int) -> None:
-        if self.gate_warmup_epochs <= 0:
-            self._gate_scale = 1.0
-            return
-        e = int(max(epoch, 0))
-        self._gate_scale = float(min(1.0, (e + 1) / float(self.gate_warmup_epochs)))
 
     def maybe_update_entropy(self, epoch: int) -> None:
         if self.entropy_decay_epochs <= 0:
@@ -285,7 +266,7 @@ class SingleTrajectoryPathLoss(nn.Module):
         
         logits_step = out.get("logits_step", None)
         if logits_step is None:
-            raise RuntimeError("SingleTrajectoryPathLoss requires model output 'logits_step' (B,P,K).")
+            raise RuntimeError("SoftMixtureNLLLoss requires model output 'logits_step' (B,P,K).")
 
         # float32 for stability
         logits_step = logits_step.float()           # (B,P,K) per-step gate logits
@@ -303,24 +284,10 @@ class SingleTrajectoryPathLoss(nn.Module):
 
         # (B,K,P)
         nll_k_t = _bivar_gaussian_nll_meters_per_t(mu_m, sigma_m, rho, y_m)
-        # (B,P,K)
-        log_pi = F.log_softmax(logits_step, dim=-1)  # gate 在第 t 步给专家 k 的对数概率
-        score = (log_pi - nll_k_t.permute(0, 2, 1))  # (B,P,K) 这是每一步专家的权重
-
-        # decode (torch, avoid CPU sync)
-        B, P, K = score.shape
-        with torch.no_grad():
-            # 第 b 条样本在未来第 t 步选哪个 expert
-            k_steps = _viterbi_scores_limited_switch_torch(score, self.max_switches, self.switch_cost)  # (B,P)
-
-        # selected NLL along path
         nll_tk = nll_k_t.permute(0, 2, 1)  # (B,P,K)
-        nll_sel = nll_tk.gather(2, k_steps.unsqueeze(-1)).squeeze(-1)  # (B,P) 这一步选中的专家的 NLL
-        path_nll = nll_sel.mean(dim=-1)  # (B,) 这就是“专家拟合 GT 的主损失”
-
-        # gate CE 多分类监督学习
-        ce = F.cross_entropy(logits_step.reshape(B * P, K), k_steps.reshape(B * P), reduction="none")
-        gate_ce = ce.view(B, P).mean(dim=-1)  # (B,) 什么时候该用哪个专家
+        log_pi = F.log_softmax(logits_step, dim=-1)  # gate 在第 t 步给专家 k 的对数概率
+        log_p = torch.logsumexp(log_pi - nll_tk, dim=-1)  # (B,P)
+        mix_nll = (-log_p).mean(dim=-1)  # (B,)
 
         # optional entropy/load-balance/smoothness
         if self.w_ent > 0.0:
@@ -329,50 +296,33 @@ class SingleTrajectoryPathLoss(nn.Module):
             ent_loss = -entropy
         else:
             pi_step = None
-            entropy = torch.zeros_like(path_nll)
-            ent_loss = torch.zeros_like(path_nll)
+            entropy = torch.zeros_like(mix_nll)
+            ent_loss = torch.zeros_like(mix_nll)
 
         if self.w_lb > 0.0:
             if pi_step is None:
                 pi_step = torch.softmax(logits_step, dim=-1)
             usage = pi_step.mean(dim=(0, 1))  # (K,)
             target = torch.full_like(usage, 1.0 / float(usage.numel()))
-            lb_loss = ((usage - target) ** 2).mean().expand_as(path_nll)
+            lb_loss = ((usage - target) ** 2).mean().expand_as(mix_nll)
         else:
-            lb_loss = torch.zeros_like(path_nll)
-
-        if self.w_smooth > 0.0:
-            mu_bpk2 = mu_m.permute(0, 2, 1, 3)  # (B,P,K,2)
-            mu_sel = mu_bpk2.gather(2, k_steps[:, :, None, None].expand(-1, -1, 1, 2)).squeeze(2)  # (B,P,2)
-            if mu_sel.size(1) > 1:
-                dv = mu_sel[:, 1:] - mu_sel[:, :-1]
-                smooth = (dv ** 2).sum(dim=-1).mean(dim=-1)  # (B,)
-            else:
-                smooth = torch.zeros_like(path_nll)
-        else:
-            smooth = torch.zeros_like(path_nll)
+            lb_loss = torch.zeros_like(mix_nll)
 
         # reduce
-        L_path = path_nll.mean()
-        L_gate = gate_ce.mean()
+        L_mix = mix_nll.mean()
         L_ent = ent_loss.mean()
         L_lb = lb_loss.mean()
-        L_smooth = smooth.mean()
 
         total = (
-            self.w_path * L_path
-            + (self.w_gate * self._gate_scale) * L_gate
+            self.w_mix * L_mix
             + self.w_ent * L_ent
             + self.w_lb * L_lb
-            + self.w_smooth * L_smooth
         )
 
         log = {
-            "path_nll": float(L_path.detach().cpu()),
-            "gate_ce": float(L_gate.detach().cpu()),
+            "mixture_nll": float(L_mix.detach().cpu()),
             "entropy": float(entropy.mean().detach().cpu()),
             "lb": float(L_lb.detach().cpu()),
-            "smooth": float(L_smooth.detach().cpu()),
         }
         return total, log
 
@@ -435,7 +385,6 @@ class Trainer:
                 self.criterion.maybe_update_entropy(epoch)
             except Exception:
                 pass
-        # 可选：用于 path_gate_warmup_epochs（gate_ce 预热）
         if hasattr(self.criterion, "maybe_update_epoch"):
             try:
                 self.criterion.maybe_update_epoch(epoch)
@@ -502,14 +451,10 @@ class Trainer:
 
             n_batches += 1
             # progress stats for path loss
-            show_nll = loss_dict.get("path_nll", 0.0)
-            show_gate = loss_dict.get("gate_ce", 0.0)
-            show_smooth = loss_dict.get("smooth", 0.0)
+            show_nll = loss_dict.get("mixture_nll", 0.0)
             pbar.set_postfix({
                 "Tot": f"{total_loss.item():.3f}",
                 "NLL": f"{show_nll:.3f}",
-                "Gate": f"{float(show_gate):.3f}",
-                "Smooth": f"{float(show_smooth):.3f}",
             })
 
         denom = max(n_batches, 1)
@@ -521,10 +466,9 @@ class Trainer:
         avg_stats = {k: (v / denom) for k, v in sum_stats.items()}
         # log path loss stats
         extra = (
-            f"path_nll={avg_stats.get('path_nll', 0.0):.4f} "
-            f"gate_ce={avg_stats.get('gate_ce', 0.0):.4f} "
+            f"mixture_nll={avg_stats.get('mixture_nll', 0.0):.4f} "
             f"entropy={avg_stats.get('entropy', 0.0):.4f} "
-            f"smooth={avg_stats.get('smooth', 0.0):.4f}"
+            f"lb={avg_stats.get('lb', 0.0):.4f}"
         )
         logger.info(
             f"[Train] Ep{epoch+1} total={sum_total/denom:.4f} main={sum_main/denom:.4f} aux={sum_aux/denom:.5f}\n"
@@ -634,10 +578,9 @@ class Trainer:
 
         avg_stats = {k: (v / denom) for k, v in sum_stats.items()}
         extra = (
-            f"path_nll={avg_stats.get('path_nll', 0.0):.4f} "
-            f"gate_ce={avg_stats.get('gate_ce', 0.0):.4f} "
+            f"mixture_nll={avg_stats.get('mixture_nll', 0.0):.4f} "
             f"entropy={avg_stats.get('entropy', 0.0):.4f} "
-            f"smooth={avg_stats.get('smooth', 0.0):.4f}"
+            f"lb={avg_stats.get('lb', 0.0):.4f}"
         )
         logger.info(
             f"[Val] total={val_loss:.4f} main={sum_main/denom:.4f} aux={sum_aux/denom:.5f} | "
