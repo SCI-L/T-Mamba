@@ -116,6 +116,11 @@ def default_loss_cfg():
         "entropy": 0.001,
         "entropy_decay_epochs": 0,
         "min_sigma_m": 0.8,
+        "phys_consistency_weight": 0.1,
+        "phys_consistency_source": "target",
+        "phys_consistency_loss": "huber",
+        "phys_consistency_huber_beta": 1.0,
+        "dt": 30.0,
     }
 
 def _load_cfg_dict_from_py(py_path: str) -> Dict[str, Any]:
@@ -164,6 +169,7 @@ def load_cfg(config_path: str) -> GlobalConfig:
 
     if cfg.loss_cfg is None:
         cfg.loss_cfg = default_loss_cfg()
+    cfg.loss_cfg["dt"] = float(cfg.dt)
     return cfg
 
 

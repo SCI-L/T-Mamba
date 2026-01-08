@@ -247,6 +247,11 @@ class SoftMixtureNLLLoss(nn.Module):
         self.entropy_start = float(loss_cfg.get("entropy", self.w_ent))
         self.entropy_decay_epochs = int(loss_cfg.get("entropy_decay_epochs", 0))
         self.min_sigma_m = float(loss_cfg.get("min_sigma_m", 0.8))
+        self.w_phys = float(loss_cfg.get("phys_consistency_weight", 0.0))
+        self.phys_source = str(loss_cfg.get("phys_consistency_source", "target")).lower()
+        self.phys_loss_type = str(loss_cfg.get("phys_consistency_loss", "huber")).lower()
+        self.phys_huber_beta = float(loss_cfg.get("phys_consistency_huber_beta", 1.0))
+        self.dt = float(loss_cfg.get("dt", 30.0))
 
     def maybe_update_entropy(self, epoch: int) -> None:
         if self.entropy_decay_epochs <= 0:
@@ -321,22 +326,88 @@ class SoftMixtureNLLLoss(nn.Module):
         L_mix = mix_nll.mean()
         L_ent = ent_loss.mean()
         L_lb = lb_loss.mean()
-        L_smooth = smooth_loss.mean()
+        L_phys = torch.zeros_like(L_mix)
+
+        if self.w_phys > 0.0:
+            if pi_step is None:
+                pi_step = torch.softmax(logits_step, dim=-1)
+            mu_bpk2 = mu_m.permute(0, 2, 1, 3)  # (B,P,K,2)
+            pred_dxdy = (pi_step.unsqueeze(-1) * mu_bpk2).sum(dim=2)  # (B,P,2)
+
+            pred_speed, pred_rot = self._compute_speed_rot_from_dxdy(pred_dxdy, self.dt)
+
+            if self.phys_source == "prior" and x_hist is not None:
+                target_speed, target_rot = self._compute_prior_speed_rot(x_hist, pred_dxdy.size(1), self.dt)
+            else:
+                target_speed, target_rot = self._compute_speed_rot_from_dxdy(y_target_m, self.dt)
+
+            if self.phys_loss_type == "l2":
+                speed_loss = F.mse_loss(pred_speed, target_speed, reduction="mean")
+                rot_loss = F.mse_loss(pred_rot, target_rot, reduction="mean")
+            else:
+                speed_loss = F.smooth_l1_loss(
+                    pred_speed, target_speed, beta=self.phys_huber_beta, reduction="mean"
+                )
+                rot_loss = F.smooth_l1_loss(
+                    pred_rot, target_rot, beta=self.phys_huber_beta, reduction="mean"
+                )
+
+            L_phys = speed_loss + rot_loss
 
         total = (
             self.w_mix * L_mix
             + self.w_ent * L_ent
             + self.w_lb * L_lb
-            + self.w_gate_smooth * L_smooth
+            + self.w_phys * L_phys
         )
 
         log = {
             "mixture_nll": float(L_mix.detach().cpu()),
             "entropy": float(entropy.mean().detach().cpu()),
             "lb": float(L_lb.detach().cpu()),
-            "gate_smooth": float(L_smooth.detach().cpu()),
+            "phys_consistency": float(L_phys.detach().cpu()),
         }
         return total, log
+
+    @staticmethod
+    def _compute_speed_rot_from_dxdy(dxdy: torch.Tensor, dt: float) -> Tuple[torch.Tensor, torch.Tensor]:
+        dt = float(dt)
+        dx = dxdy[..., 0]
+        dy = dxdy[..., 1]
+        dist = torch.sqrt(dx * dx + dy * dy + 1e-9)
+        speed_knots = (dist / dt) * 1.9438444924406
+        cog = torch.atan2(dy, dx)
+        if dxdy.size(1) > 1:
+            diff = cog[:, 1:] - cog[:, :-1]
+            diff = (diff + math.pi) % (2.0 * math.pi) - math.pi
+            rot_steps = diff * (60.0 / dt) * (180.0 / math.pi)
+            rot = torch.zeros_like(speed_knots)
+            rot[:, 1:] = rot_steps
+            rot[:, 0] = rot[:, 1]
+        else:
+            rot = torch.zeros_like(speed_knots)
+        return speed_knots, rot
+
+    @staticmethod
+    def _compute_prior_speed_rot(
+        x_hist: torch.Tensor, pred_len: int, dt: float
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        dt = float(dt)
+        sog_raw = x_hist[:, :, 9].float()  # (B,seq)
+        cog_deg = x_hist[:, :, 10].float()
+        last_sog = sog_raw[:, -1]
+
+        if x_hist.size(1) > 1:
+            cog_rad = torch.deg2rad(cog_deg)
+            diff = cog_rad[:, -1] - cog_rad[:, -2]
+            diff = (diff + math.pi) % (2.0 * math.pi) - math.pi
+            rot_last = diff * (60.0 / dt) * (180.0 / math.pi)
+        else:
+            rot_last = torch.zeros_like(last_sog)
+
+        speed_prior = last_sog.unsqueeze(1).expand(-1, pred_len)
+        rot_prior = rot_last.unsqueeze(1).expand(-1, pred_len)
+        return speed_prior, rot_prior
 
 
 # ==========================================================
