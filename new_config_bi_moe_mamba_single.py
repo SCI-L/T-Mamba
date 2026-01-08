@@ -64,7 +64,7 @@ CONFIG = {
 
     # [6.1] Viterbi decode
     "viterbi_max_switches": 3,      # 最大切换次数
-    "viterbi_switch_cost": 0.5,     # 切换惩罚
+    "viterbi_switch_cost": 0.1,     # 切换惩罚
     "viterbi_beam_size": 3,         # Beam Search 保留路径数(>1 启用)
 
     # [9] Step6 visualization
@@ -91,6 +91,7 @@ CONFIG = {
         "mixture_nll_weight": 1.0,   # soft mixture NLL 权重
         "load_balance": 0.2,         # gate 负载均衡
         "entropy": 0.02,             # gate 熵正则
+        "gate_smooth_weight": 0.1,   # gate 平滑正则权重
         "entropy_decay_epochs": 0,   # 熵衰减轮数(0=不衰减)
 
         # shared
