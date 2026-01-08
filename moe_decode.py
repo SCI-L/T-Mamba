@@ -116,3 +116,61 @@ def viterbi_decode_limited_switch(
         k, s = pk, ps
 
     return ViterbiResult(k_steps=ks, n_switches=count_switches(ks), score=best)
+
+
+def beam_decode_limited_switch(
+    pi_step: np.ndarray,
+    max_switches: int = 2,
+    switch_cost: float = 1.0,
+    beam_size: int = 3,
+    eps: float = 1e-12,
+) -> ViterbiResult:
+    """
+    Beam search decode with switch limit.
+    Keeps top-N partial paths each step and applies the same switch_cost penalty.
+    """
+    pi_step = np.asarray(pi_step, dtype=np.float64)
+    if pi_step.ndim != 2:
+        raise ValueError(f"pi_step must be (P,K), got shape={pi_step.shape}")
+    P, K = pi_step.shape
+    if P <= 0 or K <= 0:
+        raise ValueError(f"invalid pi_step shape={pi_step.shape}")
+
+    beam_size = int(max(1, beam_size))
+    if beam_size <= 1:
+        return viterbi_decode_limited_switch(
+            pi_step,
+            max_switches=max_switches,
+            switch_cost=switch_cost,
+            eps=eps,
+        )
+
+    S = int(max(0, max_switches))
+    logp = np.log(pi_step + float(eps))  # (P,K)
+
+    # beam entries: (score, last_k, switches, path_list)
+    beams = []
+    for k in range(K):
+        beams.append((float(logp[0, k]), int(k), 0, [int(k)]))
+    beams.sort(key=lambda x: x[0], reverse=True)
+    beams = beams[:beam_size]
+
+    for t in range(1, P):
+        candidates = []
+        for score, k_prev, s_prev, path in beams:
+            for k in range(K):
+                s_new = s_prev + (1 if k != k_prev else 0)
+                if s_new > S:
+                    continue
+                new_score = score + float(logp[t, k])
+                if k != k_prev:
+                    new_score -= float(switch_cost)
+                candidates.append((new_score, int(k), s_new, path + [int(k)]))
+        if not candidates:
+            break
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        beams = candidates[:beam_size]
+
+    best = max(beams, key=lambda x: x[0])
+    ks = np.asarray(best[3], dtype=np.int64)
+    return ViterbiResult(k_steps=ks, n_switches=count_switches(ks), score=float(best[0]))
