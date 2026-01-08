@@ -1,5 +1,5 @@
 # new_step4_single_trainer.py
-# Step4: 损失函数（Mixture NLL，多专家轨迹分布） + Trainer
+# Step4: path loss (single-trajectory Viterbi alignment) + Trainer
 # 适配：Step3 模型 forward() 返回 dict:
 #   out = {
 #     "logits": (B,K),
@@ -31,48 +31,6 @@ logger = logging.getLogger("Trainer")
 # ==========================================================
 # 1) Utils
 # ==========================================================
-def _bivar_gaussian_nll_meters(
-    mu_m: torch.Tensor,
-    sigma_m: torch.Tensor,
-    rho: torch.Tensor,
-    y_m: torch.Tensor,
-) -> torch.Tensor:
-    """
-    二维高斯 NLL（单位：meters 空间）
-    mu_m:    (B,K,P,2)
-    sigma_m: (B,K,P,2) positive
-    rho:     (B,K,P,1) in [-1,1]
-    y_m:     (B,1,P,2) or (B,K,P,2)
-
-    return:
-      nll_k: (B,K)  (对时间 P 求 mean，数值更稳)
-    """
-    
-    mu_m = mu_m.to(dtype=torch.float32)
-    sigma_m = sigma_m.to(dtype=torch.float32)
-    rho = rho.to(dtype=torch.float32)
-    y_m = y_m.to(dtype=torch.float32)
-
-    sx = sigma_m[..., 0].clamp_min(1e-6)
-    sy = sigma_m[..., 1].clamp_min(1e-6)
-    r = rho[..., 0].clamp(-0.999, 0.999)
-
-    zx = (y_m[..., 0] - mu_m[..., 0]) / sx
-    zy = (y_m[..., 1] - mu_m[..., 1]) / sy
-
-    one = (1.0 - r * r).clamp_min(1e-6)
-
-    # log normalization
-    log_norm = torch.log(sx) + torch.log(sy) + 0.5 * torch.log(one) + math.log(2.0 * math.pi)
-
-    quad = (zx * zx + zy * zy - 2.0 * r * zx * zy) / one
-    nll_t = log_norm + 0.5 * quad  # (B,K,P)
-
-    # time mean: (B,K)
-    return nll_t.mean(dim=-1)
-    # 整条未来轨迹总体上有多合理（每个 expert 一个总分）
-    # 对每步算完后，再把所有步平均
-
 def _bivar_gaussian_nll_meters_per_t(
     mu_m: torch.Tensor,
     sigma_m: torch.Tensor,
@@ -106,28 +64,6 @@ def _bivar_gaussian_nll_meters_per_t(
     # Viterbi path（每步每专家都有打分）
 
 
-def _pairwise_endpoint_diversity(end_xy: torch.Tensor, scale_m: float = 50.0) -> torch.Tensor:
-    """
-    end_xy: (B,K,2)  每个 mode 的终点偏移（meters）
-    返回: (B,) diversity loss
-    设计：惩罚 mode 终点彼此太近（exp(-d/scale)）
-    """
-    B, K, _ = end_xy.shape
-    diff = end_xy.unsqueeze(2) - end_xy.unsqueeze(1)        # (B,K,K,2)
-    dist = torch.sqrt((diff * diff).sum(dim=-1) + 1e-9)     # (B,K,K)
-
-    # exp(-d/s) 越近越大 -> 惩罚越大
-    div = torch.exp(-dist / float(scale_m))                 # (B,K,K)
-
-    # 去除对角线（自己和自己）
-    div_sum = div.sum(dim=(1, 2)) - div.diagonal(dim1=1, dim2=2).sum(dim=1)
-    denom = float(K * K - K) + 1e-6
-    return div_sum / denom
-
-
-# ==========================================================
-# 1.1) 受限切换 Viterbi（用于“单条轨迹”的路径对齐）
-# ==========================================================
 def _viterbi_scores_limited_switch(score_tk: np.ndarray, max_switches: int, switch_cost: float) -> np.ndarray:
     """
     score_tk: (P,K) 每步每个专家的得分（越大越好），例如 log_pi - nll
@@ -293,174 +229,7 @@ def _viterbi_scores_limited_switch_torch(
 
 
 # ==========================================================
-# 2) SOTA Loss: Mixture NLL + Soft-best-of-K + Diversity + Entropy
-# ==========================================================
-class MixtureTrajectoryLoss(nn.Module):
-    """
-    强且稳的 SOTA 方向：
-      - 主：Mixture NLL（多专家轨迹分布）
-      - 辅：soft-best-of-K regression（防止所有 mode 都学不好）
-      - 防塌缩：diversity（mode 终点分散）
-      - 稳定：entropy（极小权重，早期防 mode collapse）
-
-    loss_cfg 建议（你 config 里）：
-    {
-      "nll": 1.0,
-      "soft_bestofk": 0.15,
-      "diversity": 0.02,
-      "entropy": 0.001,
-      "softmin_tau": 0.5,
-      "min_sigma_m": 0.8
-    }
-    """
-    def __init__(self, loss_cfg: Dict[str, Any]):
-        super().__init__()
-        self.w_nll = float(loss_cfg.get("nll", 1.0))
-        self.w_best = float(loss_cfg.get("soft_bestofk", 0.15))
-        self.w_div = float(loss_cfg.get("diversity", 0.02))
-        self.w_ent = float(loss_cfg.get("entropy", 0.001))
-        self.entropy_start = float(loss_cfg.get("entropy", self.w_ent))
-        self.entropy_decay_epochs = int(loss_cfg.get("entropy_decay_epochs", 0))
-
-        self.tau = float(loss_cfg.get("softmin_tau", 0.5))
-        self.min_sigma_m = float(loss_cfg.get("min_sigma_m", 0.8))
-
-        # per-step gate 正则：抑制频繁切换 + 防塌缩（鼓励专家都有机会被使用）
-        self.w_switch = float(loss_cfg.get("switch", 0.0))
-        self.w_lb = float(loss_cfg.get("load_balance", 0.0))
-
-        # diversity 距离尺度（不写到 config 也行，默认 50m）
-        self.div_scale_m = float(loss_cfg.get("div_scale_m", 50.0))
-
-    def maybe_update_entropy(self, epoch: int) -> None:
-        """
-        可选：entropy 权重衰减（前期防 mode collapse，后期让 gate 变尖更利于 top-k 输出）。
-        epoch 从 0 开始。
-        """
-        if self.entropy_decay_epochs <= 0:
-            return
-        e = int(max(epoch, 0))
-        if e >= self.entropy_decay_epochs:
-            self.w_ent = 0.0
-        else:
-            ratio = 1.0 - (float(e) / float(self.entropy_decay_epochs))
-            self.w_ent = float(self.entropy_start) * max(ratio, 0.0)
-
-    @staticmethod
-    def _softmin(values: torch.Tensor, tau: float) -> torch.Tensor:
-        """
-        values: (B,K) -> softmin (B,)
-        """
-        return -tau * torch.logsumexp(-values / tau, dim=-1)
-
-    def forward(
-        self,
-        out: Dict[str, torch.Tensor],
-        y_target_m: torch.Tensor,   # (B,P,2) meters/step
-        x_hist: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, Dict[str, float]]:
-        # gate：优先用 per-step logits_step(B,P,K)，否则退化为全局 logits(B,K)
-        logits_global = out["logits"]  # (B,K)
-        logits_step = out.get("logits_step", None)  # (B,P,K) or None
-        mu_n = out["mu"]               # (B,K,P,2) norm
-        sigma_n = out["sigma"]         # (B,K,P,2) norm
-        rho = out["rho"]               # (B,K,P,1)
-
-        r_mean = out["r_mean"]         # (B,1,2) meters
-        r_std = out["r_std"]           # (B,1,2) meters
-
-        # 反归一化到 meters/step
-        mu_m = mu_n * r_std.unsqueeze(1) + r_mean.unsqueeze(1)   # (B,K,P,2)
-        sigma_m = sigma_n * r_std.unsqueeze(1)                   # (B,K,P,2)
-        # AMP 下统一用 float32 算 loss，避免溢出导致 NaN
-        mu_m = mu_m.to(dtype=torch.float32)
-        sigma_m = sigma_m.to(dtype=torch.float32)
-        rho = rho.to(dtype=torch.float32)
-
-        # sigma 下限（meters）：强烈建议，避免 NLL 数值爆炸/不稳
-        sigma_m = sigma_m.clamp_min(self.min_sigma_m)
-
-        # ========== 1) Mixture NLL（per-step gate）==========
-        # y_m -> (B,1,P,2)
-        y_m = y_target_m.unsqueeze(1).to(dtype=torch.float32)
-        nll_k_t = _bivar_gaussian_nll_meters_per_t(mu_m, sigma_m, rho, y_m)  # (B,K,P)
-
-        if logits_step is None:
-            log_pi_k = F.log_softmax(logits_global, dim=-1).to(dtype=torch.float32)  # (B,K)
-            log_pi_k_t = log_pi_k.unsqueeze(-1).expand_as(nll_k_t)           # (B,K,P)
-        else:
-            # (B,P,K) -> (B,K,P)
-            log_pi_k_t = F.log_softmax(logits_step, dim=-1).permute(0, 2, 1).to(dtype=torch.float32)  # (B,K,P)
-
-        mix_nll_t = -torch.logsumexp(log_pi_k_t - nll_k_t, dim=1)            # (B,P)
-        mix_nll = mix_nll_t.mean(dim=-1)                                     # (B,)
-
-        # ========== 2) Soft-best-of-K (NLL softmin) ==========
-        # 用 NLL 做 softmin 比 MSE 更稳定/更一致（尤其当你最终评估也是基于高斯分布 NLL/热力图）。
-        nll_k = nll_k_t.mean(dim=-1)                                    # (B,K)
-        best_soft = self._softmin(nll_k, self.tau)                      # (B,)
-
-        # ========== 3) Diversity (endpoint) ==========
-        end_xy = mu_m.sum(dim=2)                                        # (B,K,2) endpoint offset (meters)
-        div_loss = _pairwise_endpoint_diversity(end_xy, scale_m=self.div_scale_m)  # (B,)
-
-        # ========== 4) Entropy（可选；建议衰减到 0，避免 gate 长期平均分配）==========
-        if logits_step is None:
-            pi = torch.softmax(logits_global, dim=-1)                         # (B,K)
-            entropy = -(pi * (pi + 1e-9).log()).sum(dim=-1)                   # (B,)
-        else:
-            pi_step = torch.softmax(logits_step, dim=-1)                      # (B,P,K)
-            entropy = -(pi_step * (pi_step + 1e-9).log()).sum(dim=-1).mean(dim=-1)  # (B,)
-        ent_loss = -entropy                                              # maximize entropy => minimize -entropy
-
-        # ========== 5) Switching regularizer（抑制每步频繁切换专家）==========
-        if (logits_step is None) or (self.w_switch <= 0.0):
-            sw_loss = torch.zeros_like(mix_nll)
-        else:
-            pi_step = torch.softmax(logits_step, dim=-1)                      # (B,P,K)
-            sim = (pi_step[:, 1:, :] * pi_step[:, :-1, :]).sum(dim=-1)        # (B,P-1)
-            sw_loss = (1.0 - sim).mean(dim=-1)                                # (B,)
-
-        # ========== 6) Load balance（防塌缩：让专家都有机会被用到）==========
-        if (logits_step is None) or (self.w_lb <= 0.0):
-            lb_loss = torch.zeros_like(mix_nll)
-        else:
-            pi_step = torch.softmax(logits_step, dim=-1)                      # (B,P,K)
-            usage = pi_step.mean(dim=(0, 1))                                  # (K,)
-            target = torch.full_like(usage, 1.0 / float(usage.numel()))
-            lb_loss = ((usage - target) ** 2).mean().expand_as(mix_nll)       # (B,)
-
-        # ========== 7) Reduce ==========
-        L_nll = mix_nll.mean()
-        L_best = best_soft.mean()
-        L_div = div_loss.mean()
-        L_ent = ent_loss.mean()
-        L_sw = sw_loss.mean()
-        L_lb = lb_loss.mean()
-
-        total = (
-            self.w_nll * L_nll
-            + self.w_best * L_best
-            + self.w_div * L_div
-            + self.w_ent * L_ent
-            + self.w_switch * L_sw
-            + self.w_lb * L_lb
-        )
-
-        # 额外统计：top1 usage / minADE 上界可以在 validate 里算
-        log = {
-            "mix_nll": float(L_nll.detach().cpu()),
-            "best_soft": float(L_best.detach().cpu()),
-            "div": float(L_div.detach().cpu()),
-            "entropy": float(entropy.mean().detach().cpu()),
-            "switch": float(L_sw.detach().cpu()),
-            "lb": float(L_lb.detach().cpu()),
-        }
-        return total, log
-
-
-# ==========================================================
-# 2.2) 单条轨迹：Viterbi 路径对齐损失（更贴近部署）
+# 2) Path loss (single-trajectory Viterbi alignment)
 # ==========================================================
 class SingleTrajectoryPathLoss(nn.Module):
     """
@@ -610,118 +379,6 @@ class SingleTrajectoryPathLoss(nn.Module):
 
 # ==========================================================
 # 2.1) Soft-best-of-K (NLL) + Gate 对齐 + Diversity + Entropy
-# ==========================================================
-class SoftBestKTrajectoryLoss(nn.Module):
-    """
-    方案 S+（更适合“输出 Top-K 轨迹 + 热力图”）：
-      - 主：soft-best-of-K（用每个 mode 的高斯 NLL，而不是 MSE）
-      - 让 gate 有意义：用 per-mode NLL 生成软标签 q，对齐 gate 分布（避免 top-k 选择不稳定）
-      - 防塌缩：diversity（mode 终点分散）
-      - 稳定：entropy（极小权重，早期防 mode collapse）
-
-    你不需要把 gate 当作“严格概率”，但它必须能稳定选出 Top-K modes。
-
-    loss_cfg 推荐：
-    {
-      "best_nll": 1.0,          # soft-best-of-K NLL 权重（主）
-      "gate_ce": 0.1,           # gate 对齐权重（让 logits 有监督信号）
-      "diversity": 0.02,
-      "entropy": 0.001,
-      "softmin_tau": 0.5,       # soft-best-of-K 温度（越小越接近 hard best）
-      "tau_gate": 1.0,          # 生成 q 的温度（越小越尖锐）
-      "min_sigma_m": 0.8
-    }
-    """
-    def __init__(self, loss_cfg: Dict[str, Any]):
-        super().__init__()
-        self.w_best = float(loss_cfg.get("best_nll", loss_cfg.get("soft_bestofk", 1.0)))
-        self.w_gate = float(loss_cfg.get("gate_ce", 0.1))
-        self.w_div = float(loss_cfg.get("diversity", 0.02))
-        self.w_ent = float(loss_cfg.get("entropy", 0.001))
-        self.entropy_start = float(loss_cfg.get("entropy", self.w_ent))
-        self.entropy_decay_epochs = int(loss_cfg.get("entropy_decay_epochs", 0))
-
-        self.tau = float(loss_cfg.get("softmin_tau", 0.5))
-        self.tau_gate = float(loss_cfg.get("tau_gate", 1.0))
-        self.min_sigma_m = float(loss_cfg.get("min_sigma_m", 0.8))
-        self.div_scale_m = float(loss_cfg.get("div_scale_m", 50.0))
-
-    def maybe_update_entropy(self, epoch: int) -> None:
-        if self.entropy_decay_epochs <= 0:
-            return
-        e = int(max(epoch, 0))
-        if e >= self.entropy_decay_epochs:
-            self.w_ent = 0.0
-        else:
-            ratio = 1.0 - (float(e) / float(self.entropy_decay_epochs))
-            self.w_ent = float(self.entropy_start) * max(ratio, 0.0)
-
-    @staticmethod
-    def _softmin(values: torch.Tensor, tau: float) -> torch.Tensor:
-        return -tau * torch.logsumexp(-values / tau, dim=-1)
-
-    def forward(
-        self,
-        out: Dict[str, torch.Tensor],
-        y_target_m: torch.Tensor,   # (B,P,2) meters/step
-        x_hist: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, Dict[str, float]]:
-        # gate：优先用 per-step logits_step(B,P,K)，否则退化为全局 logits(B,K)
-        logits_global = out["logits"]  # (B,K)
-        logits_step = out.get("logits_step", None)  # (B,P,K) or None
-        mu_n = out["mu"]               # (B,K,P,2) norm
-        sigma_n = out["sigma"]         # (B,K,P,2) norm
-        rho = out["rho"]               # (B,K,P,1)
-
-        r_mean = out["r_mean"]         # (B,1,2) meters
-        r_std = out["r_std"]           # (B,1,2) meters
-
-        # 反归一化到 meters/step
-        mu_m = mu_n * r_std.unsqueeze(1) + r_mean.unsqueeze(1)   # (B,K,P,2)
-        sigma_m = sigma_n * r_std.unsqueeze(1)                   # (B,K,P,2)
-        sigma_m = sigma_m.clamp_min(self.min_sigma_m)
-
-        y_m = y_target_m.unsqueeze(1)                             # (B,1,P,2)
-        nll_k = _bivar_gaussian_nll_meters(mu_m, sigma_m, rho, y_m)  # (B,K)
-
-        # ========== 1) Soft-best-of-K NLL ==========
-        best_soft = self._softmin(nll_k, self.tau)                # (B,)
-
-        # ========== 2) Gate 对齐（soft label from NLL） ==========
-        # q_k ∝ exp(-nll_k / tau_gate)
-        q = torch.softmax(-nll_k / max(self.tau_gate, 1e-6), dim=-1)       # (B,K)
-        log_pi = F.log_softmax(logits_global, dim=-1)                      # (B,K)
-        gate_ce = -(q * log_pi).sum(dim=-1)                                # (B,)
-
-        # ========== 3) Diversity ==========
-        end_xy = mu_m.sum(dim=2)                                           # (B,K,2)
-        div_loss = _pairwise_endpoint_diversity(end_xy, scale_m=self.div_scale_m)  # (B,)
-
-        # ========== 4) Entropy（防塌缩，可很小） ==========
-        pi = torch.softmax(logits_global, dim=-1)
-        entropy = -(pi * (pi + 1e-9).log()).sum(dim=-1)                    # (B,)
-        ent_loss = -entropy
-
-        # ========== 5) Reduce ==========
-        L_best = best_soft.mean()
-        L_gate = gate_ce.mean()
-        L_div = div_loss.mean()
-        L_ent = ent_loss.mean()
-        ent_mean = entropy.mean()
-        min_nll = nll_k.min(dim=-1).values.mean()
-
-        total = self.w_best * L_best + self.w_gate * L_gate + self.w_div * L_div + self.w_ent * L_ent
-        log = {
-            "best_nll": float(L_best.detach().cpu()),
-            "gate_ce": float(L_gate.detach().cpu()),
-            "div": float(L_div.detach().cpu()),
-            "entropy": float(ent_mean.detach().cpu()),
-            "min_nll": float(min_nll.detach().cpu()),
-        }
-        return total, log
-
-
-# ==========================================================
 # 3) Trainer (AMP + Clip + Save/Load + Metrics)
 # ==========================================================
 class Trainer:
@@ -844,15 +501,15 @@ class Trainer:
                 sum_usage = u if sum_usage is None else (sum_usage + u)
 
             n_batches += 1
-            # 兼容不同 loss 的展示字段（Mixture vs SoftBestK）
-            show_nll = loss_dict.get("mix_nll", loss_dict.get("path_nll", loss_dict.get("best_nll", 0.0)))
-            show_div = loss_dict.get("div", 0.0)
-            show_gate = loss_dict.get("gate_ce", None)
+            # progress stats for path loss
+            show_nll = loss_dict.get("path_nll", 0.0)
+            show_gate = loss_dict.get("gate_ce", 0.0)
+            show_smooth = loss_dict.get("smooth", 0.0)
             pbar.set_postfix({
                 "Tot": f"{total_loss.item():.3f}",
                 "NLL": f"{show_nll:.3f}",
-                "Div": f"{show_div:.3f}",
-                "Gate": (f"{float(show_gate):.3f}" if show_gate is not None else "-"),
+                "Gate": f"{float(show_gate):.3f}",
+                "Smooth": f"{float(show_smooth):.3f}",
             })
 
         denom = max(n_batches, 1)
@@ -862,29 +519,13 @@ class Trainer:
             usage_str = str(np.round(sum_usage / denom, 3))
 
         avg_stats = {k: (v / denom) for k, v in sum_stats.items()}
-        # 尽量用“最关键”的几个项打印
-        if "mix_nll" in avg_stats:
-            extra = (
-                f"mix_nll={avg_stats.get('mix_nll', 0.0):.4f} "
-                f"best_soft={avg_stats.get('best_soft', 0.0):.4f} "
-                f"div={avg_stats.get('div', 0.0):.4f} "
-                f"entropy={avg_stats.get('entropy', 0.0):.4f}"
-            )
-        elif "path_nll" in avg_stats:
-            extra = (
-                f"path_nll={avg_stats.get('path_nll', 0.0):.4f} "
-                f"gate_ce={avg_stats.get('gate_ce', 0.0):.4f} "
-                f"entropy={avg_stats.get('entropy', 0.0):.4f} "
-                f"smooth={avg_stats.get('smooth', 0.0):.4f}"
-            )
-        else:
-            extra = (
-                f"best_nll={avg_stats.get('best_nll', 0.0):.4f} "
-                f"gate_ce={avg_stats.get('gate_ce', 0.0):.4f} "
-                f"div={avg_stats.get('div', 0.0):.4f} "
-                f"entropy={avg_stats.get('entropy', 0.0):.4f}"
-            )
-
+        # log path loss stats
+        extra = (
+            f"path_nll={avg_stats.get('path_nll', 0.0):.4f} "
+            f"gate_ce={avg_stats.get('gate_ce', 0.0):.4f} "
+            f"entropy={avg_stats.get('entropy', 0.0):.4f} "
+            f"smooth={avg_stats.get('smooth', 0.0):.4f}"
+        )
         logger.info(
             f"[Train] Ep{epoch+1} total={sum_total/denom:.4f} main={sum_main/denom:.4f} aux={sum_aux/denom:.5f}\n"
             f" | {extra}\n"
@@ -992,28 +633,12 @@ class Trainer:
         switch_cnt = switch_count_sum / max(n_samples, 1)
 
         avg_stats = {k: (v / denom) for k, v in sum_stats.items()}
-        if "mix_nll" in avg_stats:
-            extra = (
-                f"mix_nll={avg_stats.get('mix_nll', 0.0):.4f} "
-                f"best_soft={avg_stats.get('best_soft', 0.0):.4f} "
-                f"div={avg_stats.get('div', 0.0):.4f} "
-                f"entropy={avg_stats.get('entropy', 0.0):.4f}"
-            )
-        elif "path_nll" in avg_stats:
-            extra = (
-                f"path_nll={avg_stats.get('path_nll', 0.0):.4f} "
-                f"gate_ce={avg_stats.get('gate_ce', 0.0):.4f} "
-                f"entropy={avg_stats.get('entropy', 0.0):.4f} "
-                f"smooth={avg_stats.get('smooth', 0.0):.4f}"
-            )
-        else:
-            extra = (
-                f"best_nll={avg_stats.get('best_nll', 0.0):.4f} "
-                f"gate_ce={avg_stats.get('gate_ce', 0.0):.4f} "
-                f"div={avg_stats.get('div', 0.0):.4f} "
-                f"entropy={avg_stats.get('entropy', 0.0):.4f}"
-            )
-
+        extra = (
+            f"path_nll={avg_stats.get('path_nll', 0.0):.4f} "
+            f"gate_ce={avg_stats.get('gate_ce', 0.0):.4f} "
+            f"entropy={avg_stats.get('entropy', 0.0):.4f} "
+            f"smooth={avg_stats.get('smooth', 0.0):.4f}"
+        )
         logger.info(
             f"[Val] total={val_loss:.4f} main={sum_main/denom:.4f} aux={sum_aux/denom:.5f} | "
             f"{extra}\n"
