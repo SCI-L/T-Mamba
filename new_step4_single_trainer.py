@@ -243,6 +243,7 @@ class SoftMixtureNLLLoss(nn.Module):
         self.w_mix = float(loss_cfg.get("mixture_nll_weight", 1.0))
         self.w_lb = float(loss_cfg.get("load_balance", 0.0))
         self.w_ent = float(loss_cfg.get("entropy", 0.0))
+        self.w_gate_smooth = float(loss_cfg.get("gate_smooth_weight", 0.0))
         self.entropy_start = float(loss_cfg.get("entropy", self.w_ent))
         self.entropy_decay_epochs = int(loss_cfg.get("entropy_decay_epochs", 0))
         self.min_sigma_m = float(loss_cfg.get("min_sigma_m", 0.8))
@@ -308,21 +309,32 @@ class SoftMixtureNLLLoss(nn.Module):
         else:
             lb_loss = torch.zeros_like(mix_nll)
 
+        if self.w_gate_smooth > 0.0:
+            if pi_step is None:
+                pi_step = torch.softmax(logits_step, dim=-1)
+            diff = pi_step[:, 1:, :] - pi_step[:, :-1, :]
+            smooth_loss = diff.pow(2).sum(dim=-1).mean(dim=1)
+        else:
+            smooth_loss = torch.zeros_like(mix_nll)
+
         # reduce
         L_mix = mix_nll.mean()
         L_ent = ent_loss.mean()
         L_lb = lb_loss.mean()
+        L_smooth = smooth_loss.mean()
 
         total = (
             self.w_mix * L_mix
             + self.w_ent * L_ent
             + self.w_lb * L_lb
+            + self.w_gate_smooth * L_smooth
         )
 
         log = {
             "mixture_nll": float(L_mix.detach().cpu()),
             "entropy": float(entropy.mean().detach().cpu()),
             "lb": float(L_lb.detach().cpu()),
+            "gate_smooth": float(L_smooth.detach().cpu()),
         }
         return total, log
 
