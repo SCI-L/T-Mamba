@@ -95,5 +95,11 @@ CONFIG = {
 
         # shared
         "min_sigma_m": 2.0,         # sigma 下限(米)
+
+        # physics consistency
+        "phys_consistency_weight": 0.1,
+        "phys_consistency_source": "target",  # target or prior
+        "phys_consistency_loss": "huber",     # huber or l2
+        "phys_consistency_huber_beta": 1.0,
     },
 }
