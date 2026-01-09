@@ -8,7 +8,7 @@ import random
 import logging
 import importlib.util
 from dataclasses import dataclass, asdict, is_dataclass
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional
 
 import numpy as np
 import torch
@@ -519,7 +519,12 @@ class TrainingHistory:
             self.history[key] = []
         self.history[key].append(float(value))
 
-    def update(self, train_out: Dict[str, Any], val_out: Dict[str, Any]):
+    def update(
+        self,
+        train_out: Dict[str, Any],
+        val_out: Dict[str, Any],
+        test_out: Optional[Dict[str, Any]] = None,
+    ):
         # train
         if "loss" in train_out:
             self._append("train_loss", float(train_out["loss"]))
@@ -540,9 +545,26 @@ class TrainingHistory:
             self._append("val_main", float(val_out["val_main"]))
         if "val_aux" in val_out:
             self._append("val_aux", float(val_out["val_aux"]))
-        for k in ["mixture_nll", "entropy", "lb", "switch_ade", "switch_cnt"]:
+        for k in ["mixture_nll", "entropy", "lb"]:
             if k in val_out:
                 self._append(f"val_{k}", float(val_out[k]))
+        for k in ["val_ade", "val_fde", "val_switch_cnt"]:
+            if k in val_out:
+                self._append(k, float(val_out[k]))
+        for k in ["val_usage_entropy", "val_usage_std", "val_usage_gap"]:
+            if k in val_out:
+                self._append(k, float(val_out[k]))
+
+        if isinstance(test_out, dict):
+            for k in ["test_loss", "test_main", "test_aux"]:
+                if k in test_out:
+                    self._append(k, float(test_out[k]))
+            for k in ["test_ade", "test_fde", "test_switch_cnt"]:
+                if k in test_out:
+                    self._append(k, float(test_out[k]))
+            for k in ["test_usage_entropy", "test_usage_std", "test_usage_gap"]:
+                if k in test_out:
+                    self._append(k, float(test_out[k]))
 
     def save(self, path: str):
         with open(path, "w", encoding="utf-8") as f:
@@ -591,9 +613,13 @@ class TrainingHistory:
             ("mixture_nll", ("train_mixture_nll", "val_mixture_nll")),
             ("entropy", ("train_entropy", "val_entropy")),
             ("lb", ("train_lb", "val_lb")),
+            ("ADE (m)", ("val_ade", "test_ade")),
+            ("FDE (m)", ("val_fde", "test_fde")),
+            ("usage_entropy", ("val_usage_entropy", "test_usage_entropy")),
+            ("usage_std", ("val_usage_std", "test_usage_std")),
         ]
 
-        fig, axes = plt.subplots(2, 3, figsize=(12, 6), dpi=120)
+        fig, axes = plt.subplots(2, 4, figsize=(14, 6), dpi=120)
         axes = axes.reshape(-1)
         for ax, (title, (k_tr, k_va)) in zip(axes, panels):
             tr = self.history.get(k_tr, [])
@@ -709,6 +735,7 @@ def main(config_path: str = None):
         model=model,
         train_loader=train_dl,
         val_loader=val_dl,
+        test_loader=test_dl,
         optimizer=optimizer,
         scheduler=scheduler,
         criterion=criterion,
@@ -728,6 +755,7 @@ def main(config_path: str = None):
     for epoch in range(cfg.epochs):
         train_out = trainer.train_epoch(epoch)
         val_out = trainer.validate()
+        test_out = trainer.test()
 
         if not isinstance(train_out, dict):
             train_out = {"loss": float(train_out)}
@@ -736,7 +764,7 @@ def main(config_path: str = None):
 
         val_loss = float(val_out.get("val_loss", val_out.get("loss", 0.0)))
 
-        history.update(train_out, val_out)
+        history.update(train_out, val_out, test_out)
         history.save(os.path.join(cfg.res_dir, "training_history.json"))
 
         # 提速：训练曲线不必每个 epoch 都画（matplotlib + IO 会明显拖慢）

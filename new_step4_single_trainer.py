@@ -416,7 +416,7 @@ class SoftMixtureNLLLoss(nn.Module):
 # ==========================================================
 class Trainer:
     def __init__(
-        self, train_loader, val_loader, optimizer, scheduler,
+        self, train_loader, val_loader, test_loader, optimizer, scheduler,
         model: nn.Module,
         criterion: nn.Module,
         device: str,
@@ -427,6 +427,7 @@ class Trainer:
         self.model = model
         self.train_loader = train_loader
         self.val_loader = val_loader
+        self.test_loader = test_loader
         self.optimizer = optimizer
         self.scheduler = scheduler
         self.criterion = criterion
@@ -573,7 +574,25 @@ class Trainer:
 
     @torch.no_grad()
     def validate(self) -> Dict[str, float]:
+        return self._evaluate(self.val_loader, split_name="Val", step_scheduler=True)
+
+    @torch.no_grad()
+    def test(self) -> Dict[str, float]:
+        if self.test_loader is None:
+            return {}
+        return self._evaluate(self.test_loader, split_name="Test", step_scheduler=False)
+
+    @torch.no_grad()
+    def _evaluate(
+        self,
+        loader: torch.utils.data.DataLoader,
+        split_name: str,
+        step_scheduler: bool = False,
+    ) -> Dict[str, float]:
         self.model.eval()
+
+        if loader is None:
+            return {}
 
         sum_total = 0.0
         sum_main = 0.0
@@ -583,12 +602,13 @@ class Trainer:
         sum_usage = None
         n_batches = 0
 
-        # 额外：单条“切换轨迹”的 ADE + 平均切换次数
+        # 额外：单条“切换轨迹”的 ADE/FDE + 平均切换次数
         ade_switch_sum = 0.0
+        fde_switch_sum = 0.0
         switch_count_sum = 0.0
         n_samples = 0
 
-        for batch in tqdm(self.val_loader, desc="Validating"):
+        for batch in tqdm(loader, desc=f"{split_name}"):
             x, y_target, y_abs, init_pos = batch
             x = x.to(self.device, non_blocking=True)
             y_target = y_target.to(self.device, non_blocking=True)
@@ -641,6 +661,7 @@ class Trainer:
             err_sw = torch.linalg.norm(pred_abs_sw - y_abs, dim=-1)         # (B,P)
             ade_sw = err_sw.mean(dim=-1)                                    # (B,)
             ade_switch_sum += float(ade_sw.sum().detach().cpu())
+            fde_switch_sum += float(err_sw[:, -1].sum().detach().cpu())
 
             # 切换次数：count(k_t != k_{t-1})
             sw_cnt = (k_steps[:, 1:] != k_steps[:, :-1]).to(torch.float32).sum(dim=-1)  # (B,)
@@ -651,12 +672,21 @@ class Trainer:
 
         denom = max(n_batches, 1)
         usage_str = "None"
+        usage_entropy = None
+        usage_std = None
+        usage_gap = None
         if sum_usage is not None:
-            usage_str = str(np.round(sum_usage / denom, 3))
+            usage_avg = sum_usage / denom
+            usage_str = str(np.round(usage_avg, 3))
+            usage_safe = np.clip(usage_avg, 1e-12, 1.0)
+            usage_entropy = float(-(usage_safe * np.log(usage_safe)).sum())
+            usage_std = float(np.std(usage_avg))
+            usage_gap = float(np.max(usage_avg) - np.min(usage_avg))
 
-        val_loss = sum_total / denom
+        split_loss = sum_total / denom
         # 即便切换次数为 0，也应显示 0.00（而不是 nan）
         switch_ade = ade_switch_sum / max(n_samples, 1)
+        switch_fde = fde_switch_sum / max(n_samples, 1)
         switch_cnt = switch_count_sum / max(n_samples, 1)
 
         avg_stats = {k: (v / denom) for k, v in sum_stats.items()}
@@ -665,24 +695,36 @@ class Trainer:
             f"entropy={avg_stats.get('entropy', 0.0):.4f} "
             f"lb={avg_stats.get('lb', 0.0):.4f}"
         )
+        usage_extra = ""
+        if usage_entropy is not None:
+            usage_extra = (
+                f" | usage_entropy={usage_entropy:.4f}"
+                f" usage_std={usage_std:.4f} usage_gap={usage_gap:.4f}"
+            )
         logger.info(
-            f"[Val] total={val_loss:.4f} main={sum_main/denom:.4f} aux={sum_aux/denom:.5f} | "
+            f"[{split_name}] total={split_loss:.4f} main={sum_main/denom:.4f} aux={sum_aux/denom:.5f} | "
             f"{extra}\n"
-            f" | Switch_ADE={switch_ade:.2f}m SwitchCnt={switch_cnt:.2f} | expert_usage={usage_str}"
+            f" | ADE={switch_ade:.2f}m FDE={switch_fde:.2f}m SwitchCnt={switch_cnt:.2f} | "
+            f"expert_usage={usage_str}{usage_extra}"
         )
 
         # scheduler（通常监控 val_loss 即可；你 Step5 是 ReduceLROnPlateau）
-        if self.scheduler is not None:
-            self.scheduler.step(val_loss)
+        if step_scheduler and self.scheduler is not None:
+            self.scheduler.step(split_loss)
 
+        split_key = split_name.lower()
         out: Dict[str, Any] = {
-            "val_loss": float(val_loss),
-            "val_main": float(sum_main / denom),
-            "val_aux": float(sum_aux / denom),
+            f"{split_key}_loss": float(split_loss),
+            f"{split_key}_main": float(sum_main / denom),
+            f"{split_key}_aux": float(sum_aux / denom),
             **{k: float(v) for k, v in avg_stats.items()},
-            "switch_ade": float(switch_ade),
-            "switch_cnt": float(switch_cnt),
+            f"{split_key}_ade": float(switch_ade),
+            f"{split_key}_fde": float(switch_fde),
+            f"{split_key}_switch_cnt": float(switch_cnt),
         }
         if sum_usage is not None:
-            out["expert_usage"] = (sum_usage / denom).astype(np.float64).tolist()
+            out[f"{split_key}_expert_usage"] = (sum_usage / denom).astype(np.float64).tolist()
+            out[f"{split_key}_usage_entropy"] = float(usage_entropy)
+            out[f"{split_key}_usage_std"] = float(usage_std)
+            out[f"{split_key}_usage_gap"] = float(usage_gap)
         return out
