@@ -6,8 +6,8 @@ CONFIG = {
     # [1] Data paths
     # -------------------------
     "data_path": r"D:\\American AIS Data\AIS_2025\\ais_2025_resampled_30s.csv",   # AIS 原始数据文件路径
-    "save_dir": "./exp_data_single/mamba_bi_moe_V4",                       # Step1 预处理输出目录
-    "res_dir": "./exp_results_single/mamba_bi_moe_V4",                     # 训练/评估输出目录
+    "save_dir": "./exp_data_single/mamba_bi_moe_V5",                       # Step1 预处理输出目录
+    "res_dir": "./exp_results_single/mamba_bi_moe_V5",                     # 训练/评估输出目录
 
     # -------------------------
     # [2] Windowing (steps)
@@ -47,7 +47,7 @@ CONFIG = {
     # [5] Model
     # -------------------------
     "d_model": 256,             # 隐藏维度
-    "n_layers": 4,              # 编码层数
+    "n_layers": 6,              # 编码层数
     "dropout": 0.1,             # 丢弃率
     "d_state": 32,              # Mamba 状态维度
     "d_conv": 4,                # Mamba 卷积核宽度
@@ -60,7 +60,7 @@ CONFIG = {
     "init_pos_std_min": 1e-3,   # 初始位置标准差下限
 
     # [6] Experts (K)
-    "num_modes": 5,  # 专家/模式数(K)
+    "num_modes": 7,  # 专家/模式数(K)
 
     # [6.1] Viterbi decode
     "viterbi_max_switches": 3,      # 最大切换次数
@@ -89,8 +89,8 @@ CONFIG = {
     "loss_cfg": {
         # loss_type=mixture
         "mixture_nll_weight": 1.0,   # soft mixture NLL 权重
-        "load_balance": 0.2,         # gate 负载均衡
-        "entropy": 0.02,             # gate 熵正则
+        "load_balance": 0.4,         # gate 负载均衡
+        "entropy": 0.05,             # gate 熵正则
         "gate_smooth_weight": 0.1,   # gate 平滑正则权重
         "entropy_decay_epochs": 0,   # 熵衰减轮数(0=不衰减)
 
