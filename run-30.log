@@ -1,0 +1,369 @@
+2026-01-08 18:01:25,618 - [Main] - INFO - ============================================================
+2026-01-08 18:01:25,618 - [Main] - INFO - [Step5] Bi-MoE-Mamba 单条轨迹预测流程
+2026-01-08 18:01:25,618 - [Main] - INFO - config_path: new_config_bi_moe_mamba_single.py
+2026-01-08 18:01:25,618 - [Main] - INFO - save_dir   : ./exp_data_single/mamba_bi_moe_V2
+2026-01-08 18:01:25,618 - [Main] - INFO - res_dir    : ./exp_results_single/mamba_bi_moe_V2
+2026-01-08 18:01:25,618 - [Main] - INFO - ============================================================
+2026-01-08 18:01:25,726 - [Main] - INFO - Device: cuda
+2026-01-08 18:01:25,727 - [Main] - INFO - [Step5] 将重新运行 Step1(原因: 数据文件缺失)
+2026-01-08 18:01:25,727 - [Step1] - INFO - ============================================================
+2026-01-08 18:01:25,728 - [Step1] - INFO - [Step1] 读取 AIS 数据 + 清洗 + 切片 (Single-Ship)
+2026-01-08 18:01:25,728 - [Step1] - INFO - data_path: D:\\American AIS Data\AIS_2025\\ais_2025_resampled_30s.csv
+2026-01-08 18:01:25,728 - [Step1] - INFO - save_dir : ./exp_data_single/mamba_bi_moe_V2
+2026-01-08 18:01:25,728 - [Step1] - INFO - seq_len=60, pred_len=60, stride=10, dt=30.0s
+2026-01-08 18:01:25,728 - [Step1] - INFO - ============================================================
+2026-01-08 18:01:27,477 - [Step1] - INFO - 原始记录数: 858220  | 唯一 MMSI 数: 766
+2026-01-08 18:01:29,170 - [Step1] - INFO - ============================================================
+2026-01-08 18:01:29,170 - [Step1] - INFO - [Step1] 完成 ✅
+2026-01-08 18:01:29,170 - [Step1] - INFO - 有效轨迹分段数: 2080 | 丢弃分段数: 2335
+2026-01-08 18:01:29,171 - [Step1] - INFO - 生成样本数: 26600
+2026-01-08 18:01:29,171 - [Step1] - INFO - x_train: (26600, 60, 4) | y_offset: (26600, 60, 2) | y_abs: (26600, 60, 2)
+2026-01-08 18:01:29,171 - [Step1] - INFO - ============================================================
+2026-01-08 18:01:29,200 - [Step2] - INFO - 加载数据集: ./exp_data_single/mamba_bi_moe_V2
+2026-01-08 18:01:29,258 - [Step2] - INFO - 唯一船舶 MMSI 数: 734 | 样本数: 26600
+2026-01-08 18:01:29,296 - [Step2] - INFO - NonTest kept: 21096/21129 | Dropped by cutoff+buffer: 33
+2026-01-08 18:01:29,296 - [Step2] - INFO - 计算训练集统计量 (train-only, robust)...
+2026-01-08 18:01:29,369 - [Step2] - INFO - Train stats: {'dxdy_mean': [-24.448641237930406, -15.974901130995756], 'dxdy_std': [73.78408569488988, 126.85565695435193], 'sog_max': 19.700010762939453, 'acc_max': 1.21072195602417, 'rot_max': 40.00001, 'acc_raw_mean': -0.00868925079703331, 'acc_raw_std': 0.17261330783367157, 'rot_raw_mean': 0.13655820488929749, 'rot_raw_std': 5.229574680328369, 'init_pos_mean': [1125.2248966961422, -2809.4480128172104], 'init_pos_std': [3181.9484938575915, 4656.822897713829]}
+2026-01-08 18:01:29,369 - [Step2] - INFO - 执行特征工程 (dt=30.0s)...
+2026-01-08 18:01:29,506 - [Step2] - INFO - x_feat: (26600, 60, 11) (期望: N x 60 x 11)
+2026-01-08 18:01:29,652 - [Step2] - INFO - Total samples (after cutoff+buffer): 26567
+2026-01-08 18:01:29,652 - [Step2] - INFO - Test ships: 147 | (5471 samples) | 
+NonTest ships: 587 | Train(time<=cutoff): 17946 samples | Val(time>=cutoff): 3150 samples | cutoff_ts=1747905770, buffer_steps=60, buffer_sec=1800s
+2026-01-08 18:01:31,405 - [Model] - INFO - [Step3] BiMambaMoEExpertsTrajectory(K=7) params=15.50M
+2026-01-08 18:01:31,945 - [Main] - INFO - [Step4] Loss: SoftMixtureNLLLoss (per-step soft mixture NLL)
+2026-01-08 18:01:31,946 - [Main] - INFO - 开始训练 50 Epochs...
+2026-01-08 18:02:06,820 - [Trainer] - INFO - [Train] Ep1 total=12.6562 main=12.6562 aux=0.00000
+ | mixture_nll=11.8370 entropy=1.7402 lb=0.0022
+ | expert_usage=[0.142 0.132 0.129 0.177 0.159 0.114 0.146]
+2026-01-08 18:02:14,039 - [Trainer] - INFO - [Val] total=11.3192 main=11.3192 aux=0.00000 | mixture_nll=10.8233 entropy=0.7146 lb=0.0358
+ | Switch_ADE=2206.02m SwitchCnt=0.00 | expert_usage=[0.054 0.083 0.033 0.563 0.231 0.007 0.031]
+2026-01-08 18:02:18,637 - [Trainer] - INFO - Saved model: ./exp_results_single/mamba_bi_moe_V2\best_model.pt
+2026-01-08 18:02:18,637 - [Main] - INFO - [Epoch 001] train_loss=12.6562 | val_loss=11.3192 (best=11.3192@1)
+2026-01-08 18:02:36,936 - [Trainer] - INFO - [Train] Ep2 total=10.2621 main=10.2621 aux=0.00000
+ | mixture_nll=9.9665 entropy=0.7933 lb=0.0239
+ | expert_usage=[0.043 0.086 0.117 0.435 0.269 0.014 0.035]
+2026-01-08 18:02:38,813 - [Trainer] - INFO - [Val] total=10.4592 main=10.4592 aux=0.00000 | mixture_nll=10.1129 entropy=0.8980 lb=0.0243
+ | Switch_ADE=1641.15m SwitchCnt=0.01 | expert_usage=[0.078 0.122 0.14  0.505 0.097 0.016 0.041]
+2026-01-08 18:02:38,873 - [Trainer] - INFO - Saved model: ./exp_results_single/mamba_bi_moe_V2\best_model.pt
+2026-01-08 18:02:38,873 - [Main] - INFO - [Epoch 002] train_loss=10.2621 | val_loss=10.4592 (best=10.4592@2)
+2026-01-08 18:02:57,242 - [Trainer] - INFO - [Train] Ep3 total=9.6240 main=9.6240 aux=0.00000
+ | mixture_nll=9.3742 entropy=0.8646 lb=0.0131
+ | expert_usage=[0.079 0.105 0.218 0.381 0.128 0.014 0.075]
+2026-01-08 18:02:59,117 - [Trainer] - INFO - [Val] total=10.0313 main=10.0313 aux=0.00000 | mixture_nll=9.7322 entropy=0.6899 lb=0.0253
+ | Switch_ADE=1219.83m SwitchCnt=0.06 | expert_usage=[0.079 0.12  0.148 0.508 0.07  0.011 0.065]
+2026-01-08 18:02:59,185 - [Trainer] - INFO - Saved model: ./exp_results_single/mamba_bi_moe_V2\best_model.pt
+2026-01-08 18:02:59,185 - [Main] - INFO - [Epoch 003] train_loss=9.6240 | val_loss=10.0313 (best=10.0313@3)
+2026-01-08 18:03:17,536 - [Trainer] - INFO - [Train] Ep4 total=9.4846 main=9.4846 aux=0.00000
+ | mixture_nll=9.2390 entropy=0.8021 lb=0.0111
+ | expert_usage=[0.094 0.12  0.21  0.36  0.101 0.009 0.106]
+2026-01-08 18:03:19,408 - [Trainer] - INFO - [Val] total=9.9514 main=9.9514 aux=0.00000 | mixture_nll=9.6592 entropy=0.6519 lb=0.0225
+ | Switch_ADE=1059.98m SwitchCnt=0.45 | expert_usage=[0.108 0.122 0.135 0.486 0.057 0.007 0.084]
+2026-01-08 18:03:19,469 - [Trainer] - INFO - Saved model: ./exp_results_single/mamba_bi_moe_V2\best_model.pt
+2026-01-08 18:03:19,470 - [Main] - INFO - [Epoch 004] train_loss=9.4846 | val_loss=9.9514 (best=9.9514@4)
+2026-01-08 18:03:37,828 - [Trainer] - INFO - [Train] Ep5 total=9.3385 main=9.3385 aux=0.00000
+ | mixture_nll=9.0957 entropy=0.7153 lb=0.0109
+ | expert_usage=[0.097 0.123 0.197 0.356 0.078 0.008 0.141]
+2026-01-08 18:03:39,698 - [Trainer] - INFO - [Val] total=9.8708 main=9.8708 aux=0.00000 | mixture_nll=9.5794 entropy=0.5786 lb=0.0236
+ | Switch_ADE=872.81m SwitchCnt=0.62 | expert_usage=[0.104 0.11  0.125 0.497 0.052 0.007 0.105]
+2026-01-08 18:03:39,764 - [Trainer] - INFO - Saved model: ./exp_results_single/mamba_bi_moe_V2\best_model.pt
+2026-01-08 18:03:39,765 - [Main] - INFO - [Epoch 005] train_loss=9.3385 | val_loss=9.8708 (best=9.8708@5)
+2026-01-08 18:03:58,122 - [Trainer] - INFO - [Train] Ep6 total=9.1815 main=9.1815 aux=0.00000
+ | mixture_nll=8.9372 entropy=0.6055 lb=0.0110
+ | expert_usage=[0.1   0.121 0.207 0.353 0.069 0.007 0.143]
+2026-01-08 18:03:59,997 - [Trainer] - INFO - [Val] total=9.9566 main=9.9566 aux=0.00000 | mixture_nll=9.6582 entropy=0.5141 lb=0.0245
+ | Switch_ADE=864.77m SwitchCnt=0.54 | expert_usage=[0.114 0.103 0.135 0.501 0.032 0.008 0.108]
+2026-01-08 18:03:59,999 - [Main] - INFO - [Epoch 006] train_loss=9.1815 | val_loss=9.9566 (best=9.8708@5)
+2026-01-08 18:04:18,330 - [Trainer] - INFO - [Train] Ep7 total=9.0568 main=9.0568 aux=0.00000
+ | mixture_nll=8.8133 entropy=0.5408 lb=0.0121
+ | expert_usage=[0.096 0.119 0.235 0.358 0.061 0.009 0.123]
+2026-01-08 18:04:20,198 - [Trainer] - INFO - [Val] total=9.7375 main=9.7375 aux=0.00000 | mixture_nll=9.4397 entropy=0.5180 lb=0.0229
+ | Switch_ADE=849.11m SwitchCnt=0.64 | expert_usage=[0.1   0.123 0.116 0.491 0.042 0.016 0.112]
+2026-01-08 18:04:20,260 - [Trainer] - INFO - Saved model: ./exp_results_single/mamba_bi_moe_V2\best_model.pt
+2026-01-08 18:04:20,260 - [Main] - INFO - [Epoch 007] train_loss=9.0568 | val_loss=9.7375 (best=9.7375@7)
+2026-01-08 18:04:38,604 - [Trainer] - INFO - [Train] Ep8 total=8.9619 main=8.9619 aux=0.00000
+ | mixture_nll=8.7199 entropy=0.5257 lb=0.0127
+ | expert_usage=[0.091 0.119 0.243 0.363 0.061 0.013 0.109]
+2026-01-08 18:04:40,481 - [Trainer] - INFO - [Val] total=9.5902 main=9.5902 aux=0.00000 | mixture_nll=9.3023 entropy=0.5452 lb=0.0245
+ | Switch_ADE=794.99m SwitchCnt=0.67 | expert_usage=[0.103 0.106 0.142 0.505 0.046 0.026 0.072]
+2026-01-08 18:04:40,547 - [Trainer] - INFO - Saved model: ./exp_results_single/mamba_bi_moe_V2\best_model.pt
+2026-01-08 18:04:40,547 - [Main] - INFO - [Epoch 008] train_loss=8.9619 | val_loss=9.5902 (best=9.5902@8)
+2026-01-08 18:04:59,008 - [Trainer] - INFO - [Train] Ep9 total=8.9017 main=8.9017 aux=0.00000
+ | mixture_nll=8.6602 entropy=0.5132 lb=0.0131
+ | expert_usage=[0.089 0.119 0.258 0.361 0.056 0.018 0.098]
+2026-01-08 18:05:00,897 - [Trainer] - INFO - [Val] total=9.3622 main=9.3622 aux=0.00000 | mixture_nll=9.0907 entropy=0.4815 lb=0.0256
+ | Switch_ADE=742.23m SwitchCnt=0.64 | expert_usage=[0.085 0.113 0.148 0.513 0.049 0.026 0.066]
+2026-01-08 18:05:00,968 - [Trainer] - INFO - Saved model: ./exp_results_single/mamba_bi_moe_V2\best_model.pt
+2026-01-08 18:05:00,968 - [Main] - INFO - [Epoch 009] train_loss=8.9017 | val_loss=9.3622 (best=9.3622@9)
+2026-01-08 18:05:19,439 - [Trainer] - INFO - [Train] Ep10 total=8.8556 main=8.8556 aux=0.00000
+ | mixture_nll=8.6159 entropy=0.5144 lb=0.0133
+ | expert_usage=[0.088 0.118 0.262 0.362 0.053 0.025 0.092]
+2026-01-08 18:05:21,316 - [Trainer] - INFO - [Val] total=9.4244 main=9.4244 aux=0.00000 | mixture_nll=9.1447 entropy=0.5300 lb=0.0202
+ | Switch_ADE=735.89m SwitchCnt=0.62 | expert_usage=[0.115 0.129 0.139 0.467 0.048 0.032 0.07 ]
+2026-01-08 18:05:21,758 - [Main] - INFO - [Epoch 010] train_loss=8.8556 | val_loss=9.4244 (best=9.3622@9)
+2026-01-08 18:05:40,225 - [Trainer] - INFO - [Train] Ep11 total=8.8073 main=8.8073 aux=0.00000
+ | mixture_nll=8.5696 entropy=0.5221 lb=0.0130
+ | expert_usage=[0.09  0.118 0.261 0.36  0.053 0.029 0.089]
+2026-01-08 18:05:42,101 - [Trainer] - INFO - [Val] total=9.4303 main=9.4303 aux=0.00000 | mixture_nll=9.1594 entropy=0.5121 lb=0.0228
+ | Switch_ADE=749.03m SwitchCnt=0.63 | expert_usage=[0.108 0.113 0.163 0.484 0.04  0.033 0.059]
+2026-01-08 18:05:42,103 - [Main] - INFO - [Epoch 011] train_loss=8.8073 | val_loss=9.4303 (best=9.3622@9)
+2026-01-08 18:06:00,422 - [Trainer] - INFO - [Train] Ep12 total=8.7669 main=8.7669 aux=0.00000
+ | mixture_nll=8.5292 entropy=0.5167 lb=0.0129
+ | expert_usage=[0.085 0.117 0.261 0.36  0.051 0.036 0.09 ]
+2026-01-08 18:06:02,302 - [Trainer] - INFO - [Val] total=9.3492 main=9.3492 aux=0.00000 | mixture_nll=9.0732 entropy=0.5486 lb=0.0211
+ | Switch_ADE=721.88m SwitchCnt=0.67 | expert_usage=[0.113 0.113 0.14  0.477 0.043 0.045 0.069]
+2026-01-08 18:06:02,372 - [Trainer] - INFO - Saved model: ./exp_results_single/mamba_bi_moe_V2\best_model.pt
+2026-01-08 18:06:02,372 - [Main] - INFO - [Epoch 012] train_loss=8.7669 | val_loss=9.3492 (best=9.3492@12)
+2026-01-08 18:06:21,390 - [Trainer] - INFO - [Train] Ep13 total=8.7197 main=8.7197 aux=0.00000
+ | mixture_nll=8.4831 entropy=0.5289 lb=0.0124
+ | expert_usage=[0.086 0.118 0.258 0.357 0.052 0.039 0.09 ]
+2026-01-08 18:06:23,293 - [Trainer] - INFO - [Val] total=9.3475 main=9.3475 aux=0.00000 | mixture_nll=9.0715 entropy=0.5256 lb=0.0212
+ | Switch_ADE=721.08m SwitchCnt=0.67 | expert_usage=[0.115 0.109 0.159 0.474 0.036 0.047 0.061]
+2026-01-08 18:06:23,396 - [Trainer] - INFO - Saved model: ./exp_results_single/mamba_bi_moe_V2\best_model.pt
+2026-01-08 18:06:23,397 - [Main] - INFO - [Epoch 013] train_loss=8.7197 | val_loss=9.3475 (best=9.3475@13)
+2026-01-08 18:06:42,686 - [Trainer] - INFO - [Train] Ep14 total=8.6800 main=8.6800 aux=0.00000
+ | mixture_nll=8.4453 entropy=0.5273 lb=0.0125
+ | expert_usage=[0.082 0.116 0.258 0.358 0.052 0.044 0.09 ]
+2026-01-08 18:06:44,620 - [Trainer] - INFO - [Val] total=9.3406 main=9.3406 aux=0.00000 | mixture_nll=9.0657 entropy=0.4744 lb=0.0238
+ | Switch_ADE=705.56m SwitchCnt=0.66 | expert_usage=[0.083 0.12  0.16  0.495 0.033 0.043 0.066]
+2026-01-08 18:06:44,729 - [Trainer] - INFO - Saved model: ./exp_results_single/mamba_bi_moe_V2\best_model.pt
+2026-01-08 18:06:44,729 - [Main] - INFO - [Epoch 014] train_loss=8.6800 | val_loss=9.3406 (best=9.3406@14)
+2026-01-08 18:07:04,075 - [Trainer] - INFO - [Train] Ep15 total=8.6585 main=8.6585 aux=0.00000
+ | mixture_nll=8.4241 entropy=0.5428 lb=0.0119
+ | expert_usage=[0.083 0.117 0.253 0.353 0.052 0.047 0.095]
+2026-01-08 18:07:05,979 - [Trainer] - INFO - [Val] total=9.2665 main=9.2665 aux=0.00000 | mixture_nll=8.9941 entropy=0.5180 lb=0.0210
+ | Switch_ADE=694.69m SwitchCnt=0.67 | expert_usage=[0.094 0.12  0.151 0.474 0.036 0.052 0.074]
+2026-01-08 18:07:06,087 - [Trainer] - INFO - Saved model: ./exp_results_single/mamba_bi_moe_V2\best_model.pt
+2026-01-08 18:07:06,087 - [Main] - INFO - [Epoch 015] train_loss=8.6585 | val_loss=9.2665 (best=9.2665@15)
+2026-01-08 18:07:25,233 - [Trainer] - INFO - [Train] Ep16 total=8.6058 main=8.6058 aux=0.00000
+ | mixture_nll=8.3734 entropy=0.5583 lb=0.0112
+ | expert_usage=[0.083 0.121 0.254 0.345 0.052 0.054 0.091]
+2026-01-08 18:07:27,136 - [Trainer] - INFO - [Val] total=9.2625 main=9.2625 aux=0.00000 | mixture_nll=8.9923 entropy=0.5457 lb=0.0217
+ | Switch_ADE=687.41m SwitchCnt=0.67 | expert_usage=[0.097 0.1   0.148 0.483 0.034 0.062 0.076]
+2026-01-08 18:07:27,245 - [Trainer] - INFO - Saved model: ./exp_results_single/mamba_bi_moe_V2\best_model.pt
+2026-01-08 18:07:27,245 - [Main] - INFO - [Epoch 016] train_loss=8.6058 | val_loss=9.2625 (best=9.2625@16)
+2026-01-08 18:07:46,453 - [Trainer] - INFO - [Train] Ep17 total=8.5835 main=8.5835 aux=0.00000
+ | mixture_nll=8.3519 entropy=0.5667 lb=0.0106
+ | expert_usage=[0.084 0.118 0.252 0.341 0.053 0.06  0.092]
+2026-01-08 18:07:48,361 - [Trainer] - INFO - [Val] total=9.3099 main=9.3099 aux=0.00000 | mixture_nll=9.0364 entropy=0.5471 lb=0.0197
+ | Switch_ADE=705.30m SwitchCnt=0.67 | expert_usage=[0.099 0.104 0.153 0.463 0.031 0.067 0.083]
+2026-01-08 18:07:48,363 - [Main] - INFO - [Epoch 017] train_loss=8.5835 | val_loss=9.3099 (best=9.2625@16)
+2026-01-08 18:08:07,741 - [Trainer] - INFO - [Train] Ep18 total=8.5605 main=8.5605 aux=0.00000
+ | mixture_nll=8.3288 entropy=0.5783 lb=0.0100
+ | expert_usage=[0.084 0.117 0.248 0.334 0.052 0.067 0.097]
+2026-01-08 18:08:09,686 - [Trainer] - INFO - [Val] total=9.2550 main=9.2550 aux=0.00000 | mixture_nll=8.9850 entropy=0.6009 lb=0.0166
+ | Switch_ADE=696.10m SwitchCnt=0.79 | expert_usage=[0.097 0.115 0.137 0.438 0.035 0.09  0.089]
+2026-01-08 18:08:09,794 - [Trainer] - INFO - Saved model: ./exp_results_single/mamba_bi_moe_V2\best_model.pt
+2026-01-08 18:08:09,795 - [Main] - INFO - [Epoch 018] train_loss=8.5605 | val_loss=9.2550 (best=9.2550@18)
+2026-01-08 18:08:28,966 - [Trainer] - INFO - [Train] Ep19 total=8.5271 main=8.5271 aux=0.00000
+ | mixture_nll=8.2965 entropy=0.5912 lb=0.0095
+ | expert_usage=[0.083 0.117 0.243 0.33  0.053 0.074 0.101]
+2026-01-08 18:08:30,862 - [Trainer] - INFO - [Val] total=9.2494 main=9.2494 aux=0.00000 | mixture_nll=8.9822 entropy=0.5878 lb=0.0180
+ | Switch_ADE=661.92m SwitchCnt=0.84 | expert_usage=[0.098 0.102 0.151 0.45  0.034 0.091 0.074]
+2026-01-08 18:08:30,972 - [Trainer] - INFO - Saved model: ./exp_results_single/mamba_bi_moe_V2\best_model.pt
+2026-01-08 18:08:30,973 - [Main] - INFO - [Epoch 019] train_loss=8.5271 | val_loss=9.2494 (best=9.2494@19)
+2026-01-08 18:08:50,119 - [Trainer] - INFO - [Train] Ep20 total=8.5133 main=8.5133 aux=0.00000
+ | mixture_nll=8.2829 entropy=0.5984 lb=0.0091
+ | expert_usage=[0.083 0.117 0.239 0.328 0.053 0.077 0.104]
+2026-01-08 18:08:52,014 - [Trainer] - INFO - [Val] total=9.2717 main=9.2717 aux=0.00000 | mixture_nll=9.0005 entropy=0.6365 lb=0.0145
+ | Switch_ADE=700.33m SwitchCnt=0.88 | expert_usage=[0.108 0.109 0.136 0.418 0.044 0.107 0.078]
+2026-01-08 18:08:52,893 - [Main] - INFO - [Epoch 020] train_loss=8.5133 | val_loss=9.2717 (best=9.2494@19)
+2026-01-08 18:09:12,099 - [Trainer] - INFO - [Train] Ep21 total=8.4764 main=8.4764 aux=0.00000
+ | mixture_nll=8.2482 entropy=0.6105 lb=0.0085
+ | expert_usage=[0.085 0.116 0.236 0.321 0.055 0.082 0.106]
+2026-01-08 18:09:14,003 - [Trainer] - INFO - [Val] total=9.1373 main=9.1373 aux=0.00000 | mixture_nll=8.8743 entropy=0.5999 lb=0.0171
+ | Switch_ADE=661.16m SwitchCnt=0.91 | expert_usage=[0.086 0.106 0.138 0.443 0.036 0.11  0.082]
+2026-01-08 18:09:14,100 - [Trainer] - INFO - Saved model: ./exp_results_single/mamba_bi_moe_V2\best_model.pt
+2026-01-08 18:09:14,101 - [Main] - INFO - [Epoch 021] train_loss=8.4764 | val_loss=9.1373 (best=9.1373@21)
+2026-01-08 18:09:33,242 - [Trainer] - INFO - [Train] Ep22 total=8.4648 main=8.4648 aux=0.00000
+ | mixture_nll=8.2373 entropy=0.6086 lb=0.0088
+ | expert_usage=[0.084 0.113 0.234 0.326 0.053 0.083 0.107]
+2026-01-08 18:09:35,138 - [Trainer] - INFO - [Val] total=9.1283 main=9.1283 aux=0.00000 | mixture_nll=8.8615 entropy=0.6061 lb=0.0155
+ | Switch_ADE=661.03m SwitchCnt=0.93 | expert_usage=[0.103 0.105 0.146 0.425 0.034 0.105 0.082]
+2026-01-08 18:09:35,252 - [Trainer] - INFO - Saved model: ./exp_results_single/mamba_bi_moe_V2\best_model.pt
+2026-01-08 18:09:35,252 - [Main] - INFO - [Epoch 022] train_loss=8.4648 | val_loss=9.1283 (best=9.1283@22)
+2026-01-08 18:09:54,513 - [Trainer] - INFO - [Train] Ep23 total=8.4513 main=8.4513 aux=0.00000
+ | mixture_nll=8.2236 entropy=0.6100 lb=0.0085
+ | expert_usage=[0.084 0.114 0.231 0.323 0.055 0.085 0.108]
+2026-01-08 18:09:56,423 - [Trainer] - INFO - [Val] total=9.2029 main=9.2029 aux=0.00000 | mixture_nll=8.9327 entropy=0.6359 lb=0.0141
+ | Switch_ADE=673.00m SwitchCnt=0.98 | expert_usage=[0.106 0.107 0.133 0.411 0.031 0.119 0.092]
+2026-01-08 18:09:56,425 - [Main] - INFO - [Epoch 023] train_loss=8.4513 | val_loss=9.2029 (best=9.1283@22)
+2026-01-08 18:10:15,607 - [Trainer] - INFO - [Train] Ep24 total=8.4314 main=8.4314 aux=0.00000
+ | mixture_nll=8.2066 entropy=0.6170 lb=0.0083
+ | expert_usage=[0.086 0.111 0.23  0.32  0.054 0.087 0.111]
+2026-01-08 18:10:17,501 - [Trainer] - INFO - [Val] total=9.3090 main=9.3090 aux=0.00000 | mixture_nll=9.0386 entropy=0.6281 lb=0.0141
+ | Switch_ADE=692.82m SwitchCnt=1.05 | expert_usage=[0.099 0.12  0.133 0.411 0.041 0.118 0.079]
+2026-01-08 18:10:17,503 - [Main] - INFO - [Epoch 024] train_loss=8.4314 | val_loss=9.3090 (best=9.1283@22)
+2026-01-08 18:10:36,594 - [Trainer] - INFO - [Train] Ep25 total=8.4249 main=8.4249 aux=0.00000
+ | mixture_nll=8.2012 entropy=0.6311 lb=0.0079
+ | expert_usage=[0.084 0.114 0.223 0.319 0.056 0.088 0.116]
+2026-01-08 18:10:38,473 - [Trainer] - INFO - [Val] total=8.9745 main=8.9745 aux=0.00000 | mixture_nll=8.7188 entropy=0.5674 lb=0.0168
+ | Switch_ADE=621.13m SwitchCnt=1.02 | expert_usage=[0.079 0.119 0.14  0.436 0.04  0.11  0.077]
+2026-01-08 18:10:38,538 - [Trainer] - INFO - Saved model: ./exp_results_single/mamba_bi_moe_V2\best_model.pt
+2026-01-08 18:10:38,538 - [Main] - INFO - [Epoch 025] train_loss=8.4249 | val_loss=8.9745 (best=8.9745@25)
+2026-01-08 18:10:56,935 - [Trainer] - INFO - [Train] Ep26 total=8.4109 main=8.4109 aux=0.00000
+ | mixture_nll=8.1873 entropy=0.6218 lb=0.0082
+ | expert_usage=[0.082 0.111 0.225 0.323 0.057 0.09  0.112]
+2026-01-08 18:10:58,804 - [Trainer] - INFO - [Val] total=9.3320 main=9.3320 aux=0.00000 | mixture_nll=9.0594 entropy=0.6290 lb=0.0138
+ | Switch_ADE=709.23m SwitchCnt=0.99 | expert_usage=[0.101 0.125 0.127 0.408 0.041 0.108 0.09 ]
+2026-01-08 18:10:58,805 - [Main] - INFO - [Epoch 026] train_loss=8.4109 | val_loss=9.3320 (best=8.9745@25)
+2026-01-08 18:11:17,142 - [Trainer] - INFO - [Train] Ep27 total=8.4067 main=8.4067 aux=0.00000
+ | mixture_nll=8.1832 entropy=0.6257 lb=0.0079
+ | expert_usage=[0.083 0.114 0.221 0.321 0.055 0.088 0.118]
+2026-01-08 18:11:19,022 - [Trainer] - INFO - [Val] total=9.0826 main=9.0826 aux=0.00000 | mixture_nll=8.8213 entropy=0.6076 lb=0.0164
+ | Switch_ADE=635.66m SwitchCnt=1.05 | expert_usage=[0.09  0.1   0.135 0.436 0.037 0.117 0.086]
+2026-01-08 18:11:19,024 - [Main] - INFO - [Epoch 027] train_loss=8.4067 | val_loss=9.0826 (best=8.9745@25)
+2026-01-08 18:11:37,374 - [Trainer] - INFO - [Train] Ep28 total=8.3724 main=8.3724 aux=0.00000
+ | mixture_nll=8.1510 entropy=0.6333 lb=0.0078
+ | expert_usage=[0.084 0.112 0.222 0.319 0.056 0.09  0.118]
+2026-01-08 18:11:39,243 - [Trainer] - INFO - [Val] total=9.0572 main=9.0572 aux=0.00000 | mixture_nll=8.8006 entropy=0.6495 lb=0.0145
+ | Switch_ADE=635.14m SwitchCnt=1.15 | expert_usage=[0.1   0.099 0.127 0.417 0.043 0.128 0.087]
+2026-01-08 18:11:39,245 - [Main] - INFO - [Epoch 028] train_loss=8.3724 | val_loss=9.0572 (best=8.9745@25)
+2026-01-08 18:11:57,505 - [Trainer] - INFO - [Train] Ep29 total=8.3685 main=8.3685 aux=0.00000
+ | mixture_nll=8.1477 entropy=0.6377 lb=0.0076
+ | expert_usage=[0.083 0.109 0.219 0.318 0.056 0.092 0.122]
+2026-01-08 18:11:59,355 - [Trainer] - INFO - [Val] total=9.0996 main=9.0996 aux=0.00000 | mixture_nll=8.8376 entropy=0.6162 lb=0.0143
+ | Switch_ADE=661.43m SwitchCnt=1.03 | expert_usage=[0.099 0.124 0.142 0.412 0.04  0.107 0.077]
+2026-01-08 18:11:59,356 - [Main] - INFO - [Epoch 029] train_loss=8.3685 | val_loss=9.0996 (best=8.9745@25)
+2026-01-08 18:12:17,554 - [Trainer] - INFO - [Train] Ep30 total=8.3527 main=8.3527 aux=0.00000
+ | mixture_nll=8.1320 entropy=0.6343 lb=0.0075
+ | expert_usage=[0.084 0.111 0.217 0.317 0.057 0.093 0.121]
+2026-01-08 18:12:19,388 - [Trainer] - INFO - [Val] total=9.0773 main=9.0773 aux=0.00000 | mixture_nll=8.8152 entropy=0.6372 lb=0.0146
+ | Switch_ADE=646.55m SwitchCnt=1.15 | expert_usage=[0.093 0.112 0.113 0.419 0.048 0.119 0.095]
+2026-01-08 18:12:19,938 - [Main] - INFO - [Epoch 030] train_loss=8.3527 | val_loss=9.0773 (best=8.9745@25)
+2026-01-08 18:12:38,327 - [Trainer] - INFO - [Train] Ep31 total=8.3526 main=8.3526 aux=0.00000
+ | mixture_nll=8.1316 entropy=0.6406 lb=0.0076
+ | expert_usage=[0.083 0.11  0.214 0.318 0.056 0.093 0.124]
+2026-01-08 18:12:40,167 - [Trainer] - INFO - [Val] total=9.0225 main=9.0225 aux=0.00000 | mixture_nll=8.7621 entropy=0.6462 lb=0.0147
+ | Switch_ADE=650.39m SwitchCnt=1.17 | expert_usage=[0.104 0.104 0.109 0.422 0.052 0.115 0.094]
+2026-01-08 18:12:40,169 - [Main] - INFO - [Epoch 031] train_loss=8.3526 | val_loss=9.0225 (best=8.9745@25)
+2026-01-08 18:12:58,452 - [Trainer] - INFO - [Train] Ep32 total=8.3036 main=8.3036 aux=0.00000
+ | mixture_nll=8.0847 entropy=0.6374 lb=0.0075
+ | expert_usage=[0.085 0.11  0.214 0.318 0.057 0.092 0.124]
+2026-01-08 18:13:00,292 - [Trainer] - INFO - [Val] total=9.0837 main=9.0837 aux=0.00000 | mixture_nll=8.8212 entropy=0.6484 lb=0.0127
+ | Switch_ADE=663.58m SwitchCnt=1.18 | expert_usage=[0.104 0.117 0.102 0.4   0.053 0.124 0.1  ]
+2026-01-08 18:13:00,293 - [Main] - INFO - [Epoch 032] train_loss=8.3036 | val_loss=9.0837 (best=8.9745@25)
+2026-01-08 18:13:18,510 - [Trainer] - INFO - [Train] Ep33 total=8.2940 main=8.2940 aux=0.00000
+ | mixture_nll=8.0756 entropy=0.6442 lb=0.0072
+ | expert_usage=[0.086 0.109 0.212 0.315 0.058 0.096 0.124]
+2026-01-08 18:13:20,358 - [Trainer] - INFO - [Val] total=9.0620 main=9.0620 aux=0.00000 | mixture_nll=8.8027 entropy=0.6459 lb=0.0142
+ | Switch_ADE=644.03m SwitchCnt=1.16 | expert_usage=[0.089 0.118 0.109 0.415 0.049 0.121 0.099]
+2026-01-08 18:13:20,359 - [Main] - INFO - [Epoch 033] train_loss=8.2940 | val_loss=9.0620 (best=8.9745@25)
+2026-01-08 18:13:38,533 - [Trainer] - INFO - [Train] Ep34 total=8.2814 main=8.2814 aux=0.00000
+ | mixture_nll=8.0646 entropy=0.6436 lb=0.0073
+ | expert_usage=[0.085 0.111 0.211 0.316 0.057 0.095 0.127]
+2026-01-08 18:13:40,382 - [Trainer] - INFO - [Val] total=8.9940 main=8.9940 aux=0.00000 | mixture_nll=8.7365 entropy=0.6370 lb=0.0137
+ | Switch_ADE=630.62m SwitchCnt=1.13 | expert_usage=[0.096 0.111 0.116 0.409 0.047 0.128 0.093]
+2026-01-08 18:13:40,383 - [Main] - INFO - [Epoch 034] train_loss=8.2814 | val_loss=8.9940 (best=8.9745@25)
+2026-01-08 18:13:58,611 - [Trainer] - INFO - [Train] Ep35 total=8.2809 main=8.2809 aux=0.00000
+ | mixture_nll=8.0642 entropy=0.6419 lb=0.0073
+ | expert_usage=[0.083 0.11  0.21  0.317 0.056 0.096 0.128]
+2026-01-08 18:14:00,456 - [Trainer] - INFO - [Val] total=9.0768 main=9.0768 aux=0.00000 | mixture_nll=8.8148 entropy=0.6376 lb=0.0133
+ | Switch_ADE=652.76m SwitchCnt=1.13 | expert_usage=[0.103 0.116 0.118 0.405 0.045 0.12  0.094]
+2026-01-08 18:14:00,457 - [Main] - INFO - [Epoch 035] train_loss=8.2809 | val_loss=9.0768 (best=8.9745@25)
+2026-01-08 18:14:18,699 - [Trainer] - INFO - [Train] Ep36 total=8.2748 main=8.2748 aux=0.00000
+ | mixture_nll=8.0568 entropy=0.6409 lb=0.0073
+ | expert_usage=[0.084 0.109 0.212 0.315 0.057 0.096 0.127]
+2026-01-08 18:14:20,533 - [Trainer] - INFO - [Val] total=9.0225 main=9.0225 aux=0.00000 | mixture_nll=8.7643 entropy=0.6451 lb=0.0139
+ | Switch_ADE=645.49m SwitchCnt=1.21 | expert_usage=[0.094 0.108 0.099 0.413 0.05  0.131 0.105]
+2026-01-08 18:14:20,535 - [Main] - INFO - [Epoch 036] train_loss=8.2748 | val_loss=9.0225 (best=8.9745@25)
+2026-01-08 18:14:38,720 - [Trainer] - INFO - [Train] Ep37 total=8.2750 main=8.2750 aux=0.00000
+ | mixture_nll=8.0578 entropy=0.6487 lb=0.0069
+ | expert_usage=[0.085 0.109 0.204 0.314 0.057 0.098 0.133]
+2026-01-08 18:14:40,558 - [Trainer] - INFO - [Val] total=9.0163 main=9.0163 aux=0.00000 | mixture_nll=8.7619 entropy=0.6225 lb=0.0149
+ | Switch_ADE=626.40m SwitchCnt=1.15 | expert_usage=[0.091 0.108 0.118 0.421 0.041 0.121 0.099]
+2026-01-08 18:14:40,559 - [Main] - INFO - [Epoch 037] train_loss=8.2750 | val_loss=9.0163 (best=8.9745@25)
+2026-01-08 18:14:58,764 - [Trainer] - INFO - [Train] Ep38 total=8.2359 main=8.2359 aux=0.00000
+ | mixture_nll=8.0207 entropy=0.6411 lb=0.0076
+ | expert_usage=[0.084 0.108 0.207 0.318 0.056 0.098 0.127]
+2026-01-08 18:15:00,607 - [Trainer] - INFO - [Val] total=9.0263 main=9.0263 aux=0.00000 | mixture_nll=8.7673 entropy=0.6411 lb=0.0136
+ | Switch_ADE=644.24m SwitchCnt=1.17 | expert_usage=[0.099 0.108 0.108 0.41  0.052 0.126 0.096]
+2026-01-08 18:15:00,608 - [Main] - INFO - [Epoch 038] train_loss=8.2359 | val_loss=9.0263 (best=8.9745@25)
+2026-01-08 18:15:18,850 - [Trainer] - INFO - [Train] Ep39 total=8.2347 main=8.2347 aux=0.00000
+ | mixture_nll=8.0182 entropy=0.6455 lb=0.0070
+ | expert_usage=[0.083 0.109 0.203 0.315 0.058 0.098 0.133]
+2026-01-08 18:15:20,700 - [Trainer] - INFO - [Val] total=9.0802 main=9.0802 aux=0.00000 | mixture_nll=8.8222 entropy=0.6440 lb=0.0132
+ | Switch_ADE=655.36m SwitchCnt=1.16 | expert_usage=[0.103 0.11  0.119 0.403 0.046 0.129 0.091]
+2026-01-08 18:15:20,701 - [Main] - INFO - [Epoch 039] train_loss=8.2347 | val_loss=9.0802 (best=8.9745@25)
+2026-01-08 18:15:38,916 - [Trainer] - INFO - [Train] Ep40 total=8.2227 main=8.2227 aux=0.00000
+ | mixture_nll=8.0077 entropy=0.6459 lb=0.0070
+ | expert_usage=[0.085 0.108 0.206 0.315 0.057 0.097 0.131]
+2026-01-08 18:15:40,752 - [Trainer] - INFO - [Val] total=8.9690 main=8.9690 aux=0.00000 | mixture_nll=8.7148 entropy=0.6510 lb=0.0135
+ | Switch_ADE=635.09m SwitchCnt=1.18 | expert_usage=[0.097 0.109 0.105 0.407 0.046 0.131 0.104]
+2026-01-08 18:15:41,241 - [Trainer] - INFO - Saved model: ./exp_results_single/mamba_bi_moe_V2\best_model.pt
+2026-01-08 18:15:41,242 - [Main] - INFO - [Epoch 040] train_loss=8.2227 | val_loss=8.9690 (best=8.9690@40)
+2026-01-08 18:15:59,615 - [Trainer] - INFO - [Train] Ep41 total=8.2200 main=8.2200 aux=0.00000
+ | mixture_nll=8.0051 entropy=0.6456 lb=0.0070
+ | expert_usage=[0.084 0.109 0.205 0.314 0.056 0.099 0.133]
+2026-01-08 18:16:01,480 - [Trainer] - INFO - [Val] total=8.9973 main=8.9973 aux=0.00000 | mixture_nll=8.7418 entropy=0.6467 lb=0.0135
+ | Switch_ADE=636.57m SwitchCnt=1.17 | expert_usage=[0.096 0.109 0.1   0.407 0.049 0.132 0.107]
+2026-01-08 18:16:01,481 - [Main] - INFO - [Epoch 041] train_loss=8.2200 | val_loss=8.9973 (best=8.9690@40)
+2026-01-08 18:16:19,868 - [Trainer] - INFO - [Train] Ep42 total=8.2141 main=8.2141 aux=0.00000
+ | mixture_nll=7.9986 entropy=0.6455 lb=0.0071
+ | expert_usage=[0.085 0.109 0.203 0.316 0.057 0.098 0.132]
+2026-01-08 18:16:21,719 - [Trainer] - INFO - [Val] total=9.0756 main=9.0756 aux=0.00000 | mixture_nll=8.8161 entropy=0.6575 lb=0.0125
+ | Switch_ADE=657.19m SwitchCnt=1.18 | expert_usage=[0.102 0.107 0.098 0.397 0.053 0.138 0.105]
+2026-01-08 18:16:21,720 - [Main] - INFO - [Epoch 042] train_loss=8.2141 | val_loss=9.0756 (best=8.9690@40)
+2026-01-08 18:16:39,965 - [Trainer] - INFO - [Train] Ep43 total=8.2103 main=8.2103 aux=0.00000
+ | mixture_nll=7.9958 entropy=0.6506 lb=0.0068
+ | expert_usage=[0.084 0.109 0.205 0.311 0.057 0.1   0.133]
+2026-01-08 18:16:41,818 - [Trainer] - INFO - [Val] total=8.9891 main=8.9891 aux=0.00000 | mixture_nll=8.7341 entropy=0.6440 lb=0.0129
+ | Switch_ADE=640.61m SwitchCnt=1.17 | expert_usage=[0.099 0.112 0.107 0.4   0.045 0.134 0.103]
+2026-01-08 18:16:41,819 - [Main] - INFO - [Epoch 043] train_loss=8.2103 | val_loss=8.9891 (best=8.9690@40)
+2026-01-08 18:17:00,075 - [Trainer] - INFO - [Train] Ep44 total=8.2068 main=8.2068 aux=0.00000
+ | mixture_nll=7.9920 entropy=0.6456 lb=0.0070
+ | expert_usage=[0.085 0.107 0.204 0.315 0.055 0.1   0.133]
+2026-01-08 18:17:01,921 - [Trainer] - INFO - [Val] total=9.0961 main=9.0961 aux=0.00000 | mixture_nll=8.8359 entropy=0.6378 lb=0.0139
+ | Switch_ADE=657.90m SwitchCnt=1.17 | expert_usage=[0.092 0.115 0.102 0.412 0.049 0.124 0.106]
+2026-01-08 18:17:01,923 - [Main] - INFO - [Epoch 044] train_loss=8.2068 | val_loss=9.0961 (best=8.9690@40)
+2026-01-08 18:17:20,125 - [Trainer] - INFO - [Train] Ep45 total=8.1943 main=8.1943 aux=0.00000
+ | mixture_nll=7.9805 entropy=0.6438 lb=0.0070
+ | expert_usage=[0.083 0.107 0.203 0.315 0.058 0.099 0.135]
+2026-01-08 18:17:21,960 - [Trainer] - INFO - [Val] total=9.0350 main=9.0350 aux=0.00000 | mixture_nll=8.7773 entropy=0.6640 lb=0.0119
+ | Switch_ADE=649.41m SwitchCnt=1.17 | expert_usage=[0.1   0.12  0.101 0.389 0.054 0.133 0.104]
+2026-01-08 18:17:21,962 - [Main] - INFO - [Epoch 045] train_loss=8.1943 | val_loss=9.0350 (best=8.9690@40)
+2026-01-08 18:17:40,201 - [Trainer] - INFO - [Train] Ep46 total=8.2009 main=8.2009 aux=0.00000
+ | mixture_nll=7.9863 entropy=0.6484 lb=0.0068
+ | expert_usage=[0.084 0.108 0.203 0.31  0.056 0.101 0.138]
+2026-01-08 18:17:42,032 - [Trainer] - INFO - [Val] total=9.0732 main=9.0732 aux=0.00000 | mixture_nll=8.8165 entropy=0.6528 lb=0.0131
+ | Switch_ADE=655.31m SwitchCnt=1.18 | expert_usage=[0.1   0.112 0.102 0.404 0.052 0.128 0.102]
+2026-01-08 18:17:42,034 - [Main] - INFO - [Epoch 046] train_loss=8.2009 | val_loss=9.0732 (best=8.9690@40)
+2026-01-08 18:18:00,275 - [Trainer] - INFO - [Train] Ep47 total=8.1850 main=8.1850 aux=0.00000
+ | mixture_nll=7.9714 entropy=0.6517 lb=0.0069
+ | expert_usage=[0.083 0.108 0.202 0.313 0.058 0.102 0.134]
+2026-01-08 18:18:02,112 - [Trainer] - INFO - [Val] total=9.0487 main=9.0487 aux=0.00000 | mixture_nll=8.7903 entropy=0.6485 lb=0.0125
+ | Switch_ADE=655.41m SwitchCnt=1.19 | expert_usage=[0.1   0.119 0.1   0.397 0.052 0.128 0.104]
+2026-01-08 18:18:02,113 - [Main] - INFO - [Epoch 047] train_loss=8.1850 | val_loss=9.0487 (best=8.9690@40)
+2026-01-08 18:18:20,351 - [Trainer] - INFO - [Train] Ep48 total=8.1795 main=8.1795 aux=0.00000
+ | mixture_nll=7.9656 entropy=0.6491 lb=0.0067
+ | expert_usage=[0.085 0.108 0.202 0.312 0.057 0.101 0.135]
+2026-01-08 18:18:22,185 - [Trainer] - INFO - [Val] total=8.9989 main=8.9989 aux=0.00000 | mixture_nll=8.7438 entropy=0.6481 lb=0.0129
+ | Switch_ADE=641.73m SwitchCnt=1.19 | expert_usage=[0.1   0.112 0.103 0.4   0.047 0.131 0.106]
+2026-01-08 18:18:22,187 - [Main] - INFO - [Epoch 048] train_loss=8.1795 | val_loss=8.9989 (best=8.9690@40)
+2026-01-08 18:18:40,426 - [Trainer] - INFO - [Train] Ep49 total=8.1814 main=8.1814 aux=0.00000
+ | mixture_nll=7.9679 entropy=0.6445 lb=0.0071
+ | expert_usage=[0.083 0.109 0.202 0.315 0.055 0.101 0.135]
+2026-01-08 18:18:42,265 - [Trainer] - INFO - [Val] total=8.9955 main=8.9955 aux=0.00000 | mixture_nll=8.7415 entropy=0.6487 lb=0.0133
+ | Switch_ADE=636.07m SwitchCnt=1.20 | expert_usage=[0.1   0.105 0.107 0.406 0.049 0.133 0.099]
+2026-01-08 18:18:42,267 - [Main] - INFO - [Epoch 049] train_loss=8.1814 | val_loss=8.9955 (best=8.9690@40)
+2026-01-08 18:19:00,495 - [Trainer] - INFO - [Train] Ep50 total=8.1762 main=8.1762 aux=0.00000
+ | mixture_nll=7.9608 entropy=0.6524 lb=0.0068
+ | expert_usage=[0.085 0.107 0.202 0.312 0.056 0.104 0.134]
+2026-01-08 18:19:02,333 - [Trainer] - INFO - [Val] total=9.0589 main=9.0589 aux=0.00000 | mixture_nll=8.8011 entropy=0.6477 lb=0.0133
+ | Switch_ADE=650.67m SwitchCnt=1.23 | expert_usage=[0.097 0.111 0.096 0.407 0.053 0.129 0.106]
+2026-01-08 18:19:02,768 - [Main] - INFO - [Epoch 050] train_loss=8.1762 | val_loss=9.0589 (best=8.9690@40)
+2026-01-08 18:19:02,768 - [Main] - INFO - 训练完成，总耗时: 17.5 min
+2026-01-08 18:19:02,768 - [Main] - INFO - Best Val Loss: 8.9690 @ Epoch 40
+2026-01-08 18:19:03,354 - [Trainer] - INFO - Loaded model: ./exp_results_single/mamba_bi_moe_V2\best_model.pt
+2026-01-08 18:19:03,355 - [Main] - INFO - [Step5] 开始全面评估 (Test, 单条轨迹解码) ...
+2026-01-08 18:19:29,439 - [Main] - INFO - ====================================
+2026-01-08 18:19:29,439 - [Main] - INFO - 最终测试指标 (Test Metrics, Single Trajectory):
+2026-01-08 18:19:29,439 - [Main] - INFO -   ADE: 521.17 m
+2026-01-08 18:19:29,439 - [Main] - INFO -   FDE: 1117.48 m
+2026-01-08 18:19:29,439 - [Main] - INFO -   SOG_RMSE: 1.42 knots
+2026-01-08 18:19:29,439 - [Main] - INFO -   COG_MAE:  7.22 deg
+2026-01-08 18:19:29,439 - [Main] - INFO -   Avg_Top1_pi(mean over t): 0.670
+2026-01-08 18:19:29,439 - [Main] - INFO -   Avg_pi_entropy(global):   0.802
+2026-01-08 18:19:29,439 - [Main] - INFO -   Avg_pi_step_entropy:      0.670
+2026-01-08 18:19:29,440 - [Main] - INFO -   Avg_switch_count:         1.08
+2026-01-08 18:19:29,440 - [Main] - INFO - ====================================
+2026-01-08 18:19:29,521 - [Main] - INFO - [Step5] Done 结果已保存到: ./exp_results_single/mamba_bi_moe_V2
