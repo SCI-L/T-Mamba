@@ -6,8 +6,8 @@ CONFIG = {
     # [1] Data paths
     # -------------------------
     "data_path": r"D:\\American AIS Data\AIS_2025\\ais_2025_resampled_30s.csv",   # AIS 原始数据文件路径
-    "save_dir": "./exp_data_single/mamba_bi_moe_V3",                       # Step1 预处理输出目录
-    "res_dir": "./exp_results_single/mamba_bi_moe_V3",                     # 训练/评估输出目录
+    "save_dir": "./exp_data_single/mamba_bi_moe_V4",                       # Step1 预处理输出目录
+    "res_dir": "./exp_results_single/mamba_bi_moe_V4",                     # 训练/评估输出目录
 
     # -------------------------
     # [2] Windowing (steps)
@@ -47,7 +47,7 @@ CONFIG = {
     # [5] Model
     # -------------------------
     "d_model": 256,             # 隐藏维度
-    "n_layers": 6,              # 编码层数
+    "n_layers": 4,              # 编码层数
     "dropout": 0.1,             # 丢弃率
     "d_state": 32,              # Mamba 状态维度
     "d_conv": 4,                # Mamba 卷积核宽度
@@ -74,8 +74,8 @@ CONFIG = {
     # [7] Train
     # -------------------------
     "epochs": 50,                   # 训练轮数
-    "lr": 0.0002,                   # 学习率
-    "weight_decay": 0.01,           # 权重衰减
+    "lr": 0.00008,                   # 学习率
+    "weight_decay": 0.03,           # 权重衰减
     "use_amp": True,                # 是否启用 AMP
     "grad_clip": 1.0,               # 梯度裁剪
     "lr_scheduler_factor": 0.5,     # 学习率衰减因子
