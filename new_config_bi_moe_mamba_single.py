@@ -6,8 +6,8 @@ CONFIG = {
     # [1] Data paths
     # -------------------------
     "data_path": r"D:\\American AIS Data\AIS_2025\\ais_2025_resampled_30s.csv",   # AIS 原始数据文件路径
-    "save_dir": "./exp_data_single/mamba_bi_moe_V15",                       # Step1 预处理输出目录
-    "res_dir": "./exp_results_single/mamba_bi_moe_V15",                     # 训练/评估输出目录
+    "save_dir": "./exp_data_single/mamba_bi_moe_V3",                       # Step1 预处理输出目录
+    "res_dir": "./exp_results_single/mamba_bi_moe_V3",                     # 训练/评估输出目录
 
     # -------------------------
     # [2] Windowing (steps)
@@ -60,7 +60,7 @@ CONFIG = {
     "init_pos_std_min": 1e-3,   # 初始位置标准差下限
 
     # [6] Experts (K)
-    "num_modes": 7,  # 专家/模式数(K)
+    "num_modes": 5,  # 专家/模式数(K)
 
     # [6.1] Viterbi decode
     "viterbi_max_switches": 3,      # 最大切换次数
